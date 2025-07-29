@@ -57,6 +57,20 @@ router.post('/proxy',
     let cached = false;
     let tokensUsed = 0;
 
+    logger.info('Received proxy request', {
+        requestId: req.requestId,
+        intent: req.body.intent.substring(0, 50),
+        origin: req.body.origin,
+        payloadSize: JSON.stringify(req.body.payload).length
+        });
+
+    console.info('Proxy request received', {
+        requestId: req.requestId,
+        intent: req.body.intent.substring(0, 50),
+        origin: req.body.origin,
+        payloadSize: JSON.stringify(req.body.payload).length
+    });
+
     try {
       const { token, intent: rawIntent, payload, origin } = req.body;
       intent = rawIntent;
@@ -93,6 +107,14 @@ router.post('/proxy',
         await NotificationService.notifyIntentRewritten(userId, intent, processedIntent);
       }
 
+      console.log('Intent processing result', {
+        userId,
+        originalIntent: intent,
+        processedIntent,
+        success: intentResult.success,
+        fallback: intentResult.fallback
+      });
+
       // Step 4: Semantic Cache Check
       const cacheResult = await SemanticCache.searchCache(userId, processedIntent, payload);
       if (cacheResult.found && cacheResult.entry) {
@@ -101,6 +123,12 @@ router.post('/proxy',
         matchedTemplate = cacheResult.entry.matched_template;
 
         logger.info('Cache hit - returning cached response', {
+          userId,
+          template: matchedTemplate,
+          confidence
+        });
+
+        console.log('Cache hit - returning cached response', {
           userId,
           template: matchedTemplate,
           confidence
@@ -203,6 +231,7 @@ router.post('/proxy',
 
       switch (matchedTemplate) {
         case 'gemini-chat-completion':
+            console.log("decryptedApiKey", decryptedApiKey);
           apiResponse = await callGeminiAPI(payload, decryptedApiKey);
           break;
         
@@ -360,20 +389,63 @@ async function callGeminiAPI(payload: any, apiKey: string): Promise<{
       payloadKeys: Object.keys(payload || {})
     });
 
-    const requestBody = {
+    // Build proper Gemini API request structure
+    const requestBody: any = {
       contents: payload.contents || [{
         parts: [{
-          text: payload.prompt || payload.message || payload.text
+          text: payload.prompt || payload.message || payload.text || "Hello"
         }]
-      }],
-      generationConfig: {
-        temperature: payload.temperature || 0.7,
-        maxOutputTokens: payload.maxOutputTokens || payload.max_tokens || 800,
-        topP: payload.topP || payload.top_p || 0.8,
-        topK: payload.topK || payload.top_k || 10
-      },
-      ...payload
+      }]
     };
+
+    // Add generation config only if specified (Gemini has defaults)
+    const generationConfig: any = {};
+    
+    if (payload.temperature !== undefined) {
+      generationConfig.temperature = payload.temperature;
+    }
+    if (payload.maxOutputTokens !== undefined || payload.max_tokens !== undefined) {
+      generationConfig.maxOutputTokens = payload.maxOutputTokens || payload.max_tokens;
+    }
+    if (payload.topP !== undefined || payload.top_p !== undefined) {
+      generationConfig.topP = payload.topP || payload.top_p;
+    }
+    if (payload.topK !== undefined || payload.top_k !== undefined) {
+      generationConfig.topK = payload.topK || payload.top_k;
+    }
+    if (payload.candidateCount !== undefined) {
+      generationConfig.candidateCount = payload.candidateCount;
+    }
+    if (payload.stopSequences !== undefined || payload.stop_sequences !== undefined) {
+      generationConfig.stopSequences = payload.stopSequences || payload.stop_sequences;
+    }
+
+    // Only add generationConfig if we have any settings
+    if (Object.keys(generationConfig).length > 0) {
+      requestBody.generationConfig = generationConfig;
+    }
+
+    // Add safety settings if provided
+    if (payload.safetySettings) {
+      requestBody.safetySettings = payload.safetySettings;
+    }
+
+    // Add system instruction if provided
+    if (payload.systemInstruction) {
+      requestBody.systemInstruction = payload.systemInstruction;
+    }
+
+    // Add system instruction if provided
+    if (payload.systemInstruction) {
+      requestBody.systemInstruction = payload.systemInstruction;
+    }
+
+    logger.info('Gemini API request body structure', {
+      hasContents: !!requestBody.contents,
+      contentsLength: requestBody.contents?.length || 0,
+      hasGenerationConfig: !!requestBody.generationConfig,
+      generationConfigKeys: requestBody.generationConfig ? Object.keys(requestBody.generationConfig) : []
+    });
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
@@ -388,10 +460,22 @@ async function callGeminiAPI(payload: any, apiKey: string): Promise<{
 
     if (!response.ok) {
       const errorText = await response.text();
+      logger.error('Gemini API error response', {
+        status: response.status,
+        statusText: response.statusText,
+        errorBody: errorText
+      });
       throw new Error(`Gemini API error: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const data = await response.json() as GeminiResponse;
+    
+    logger.info('Gemini API success response', {
+      hasCandidates: !!data.candidates,
+      candidatesCount: data.candidates?.length || 0,
+      hasUsageMetadata: !!data.usageMetadata,
+      totalTokens: data.usageMetadata?.totalTokenCount || 0
+    });
     
     return {
       success: true,
