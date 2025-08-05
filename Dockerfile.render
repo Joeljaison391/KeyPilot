@@ -1,0 +1,71 @@
+# Production Dockerfile optimized for Render deployment
+# Multi-stage build for smaller image size and better security
+
+# Build stage
+FROM node:18-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache python3 make g++ git
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies (including devDependencies for build)
+RUN npm ci --only=production=false && npm cache clean --force
+
+# Copy source code
+COPY . .
+
+# Build the application
+RUN npm run build
+
+# Remove dev dependencies after build
+RUN npm prune --production
+
+# Production stage
+FROM node:18-alpine AS production
+
+# Install security updates and dumb-init
+RUN apk update && apk upgrade && apk add --no-cache dumb-init
+
+# Create app directory
+WORKDIR /app
+
+# Create non-root user for security
+RUN addgroup -g 1001 -S keypilot && \
+    adduser -S keypilot -u 1001 -G keypilot
+
+# Copy package.json for reference
+COPY package*.json ./
+
+# Copy production dependencies from builder
+COPY --from=builder /app/node_modules ./node_modules
+
+# Copy built application from builder stage
+COPY --from=builder /app/dist ./dist
+
+# Copy necessary runtime files
+COPY --from=builder /app/scripts ./scripts
+
+# Create logs directory with proper permissions
+RUN mkdir -p logs && \
+    chown -R keypilot:keypilot /app
+
+# Switch to non-root user
+USER keypilot
+
+# Expose port (Render will inject PORT environment variable)
+EXPOSE $PORT
+
+# Add health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD node scripts/health-check.js || exit 1
+
+# Use dumb-init to handle signals properly
+ENTRYPOINT ["dumb-init", "--"]
+
+# Start the application
+CMD ["npm", "start"]

@@ -1,0 +1,99 @@
+services:
+  # Redis Database Service
+  - type: redis
+    name: keypilot-redis
+    plan: starter # Free tier (25MB) - upgrade to standard for production
+    region: oregon # Choose: oregon, frankfurt, singapore
+    databases:
+      - name: keypilot
+        user: keypilot
+    ipAllowList: [] # Empty allows all IPs - restrict for production
+
+  # KeyPilot Gateway Service
+  - type: web
+    name: keypilot-gateway
+    runtime: docker
+    repo: https://github.com/Joeljaison391/KeyPilot.git # Replace with your repo URL
+    rootDir: gateway-service
+    dockerfilePath: ./Dockerfile
+    region: oregon # Same region as Redis for lower latency
+    plan: starter # Free tier - upgrade to standard/professional for production
+    buildCommand: "" # Docker handles the build
+    startCommand: "" # Docker handles the start command
+    
+    # Auto-deploy settings
+    autoDeploy: true
+    branch: main
+    
+    # Health check
+    healthCheckPath: /health
+    
+    # Environment variables
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      - key: APP_NAME
+        value: keypilot-gateway
+      - key: APP_VERSION
+        value: "1.0.0"
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: keypilot-redis
+          property: connectionString
+      
+      # Security - Generate strong secrets for production
+      - key: SESSION_SECRET
+        generateValue: true # Render will generate a secure random value
+      - key: JWT_SECRET  
+        generateValue: true # Render will generate a secure random value
+      - key: ENCRYPTION_KEY
+        generateValue: true # Render will generate a secure random value
+      
+      # Optional: API Keys for external services (set these in Render dashboard)
+      # - key: GEMINI_API_KEY
+      #   sync: false # Set manually in dashboard for security
+      # - key: OPENAI_API_KEY
+      #   sync: false
+      # - key: ANTHROPIC_API_KEY
+      #   sync: false
+    
+    # Scaling configuration
+    numInstances: 1 # Start with 1, scale up as needed
+    
+    # Resource limits
+    disk:
+      name: keypilot-gateway-disk
+      mountPath: /usr/src/app/logs
+      sizeGB: 1 # 1GB for logs
+
+# Optional: Static site for documentation or frontend
+# - type: static
+#   name: keypilot-docs
+#   repo: https://github.com/Joeljaison391/KeyPilot.git
+#   rootDir: docs
+#   buildCommand: npm run build
+#   staticPublishPath: ./dist
+#   pullRequestPreviewsEnabled: true
+
+# Optional: Background workers or cron jobs
+# - type: worker
+#   name: keypilot-worker
+#   runtime: docker
+#   repo: https://github.com/Joeljaison391/KeyPilot.git
+#   rootDir: gateway-service
+#   dockerfilePath: ./Dockerfile.worker
+#   startCommand: npm run worker
+#   envVarsFromGroup: keypilot-env
+
+# Optional: Cron jobs for maintenance tasks
+# - type: cron
+#   name: keypilot-cleanup
+#   runtime: docker
+#   repo: https://github.com/Joeljaison391/KeyPilot.git
+#   rootDir: gateway-service  
+#   dockerfilePath: ./Dockerfile
+#   schedule: "0 2 * * *" # Daily at 2 AM
+#   startCommand: npm run cleanup
