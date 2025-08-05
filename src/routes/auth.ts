@@ -41,15 +41,33 @@ router.post('/login',
     body('password')
       .notEmpty()
       .withMessage('password is required')
-      .isLength({ min: 1, max: 100 })
-      .withMessage('password must be between 1 and 100 characters'),
   ]),
   async (req: Request, res: Response) => {
     try {
+      // Log the raw request for debugging
+      logger.info('Login request received:', {
+        requestId: req.requestId,
+        method: req.method,
+        contentType: req.get('Content-Type'),
+        bodyKeys: Object.keys(req.body || {}),
+        bodyValues: req.body ? Object.entries(req.body).reduce((acc, [key, value]) => {
+          acc[key] = key === 'password' ? '[REDACTED]' : value;
+          return acc;
+        }, {} as any) : {},
+        ip: req.ip,
+        userAgent: req.get('User-Agent'),
+      });
+
       const { userId, password }: LoginRequest = req.body;
 
-      logger.info(`Login attempt for user: ${userId}`, {
+      logger.info(`Login attempt for user: ${userId || '[MISSING]'}`, {
         requestId: req.requestId,
+        hasUserId: !!userId,
+        hasPassword: !!password,
+        userIdType: typeof userId,
+        passwordType: typeof password,
+        userIdLength: userId ? userId.length : 0,
+        passwordLength: password ? password.length : 0,
         ip: req.ip,
         userAgent: req.get('User-Agent'),
       });

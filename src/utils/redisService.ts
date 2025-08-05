@@ -7,61 +7,141 @@ export class RedisService {
   private isConnected: boolean = false;
 
   constructor() {
-    // Choose Redis URL based on environment
+    // Choose Redis URL based on configuration
     const redisUrl = this.getRedisUrl();
     
-    const clientOptions: any = {
-      url: redisUrl,
-    };
+    logger.info('Initializing Redis Client:', {
+      url: redisUrl ? `${redisUrl.split('@')[0]}@***` : 'not set',
+      environment: config.env,
+      hasPassword: !!config.redis.password,
+      tlsEnabled: config.redis.tls
+    });
 
-    // Add password if provided
-    if (config.redis.password) {
-      clientOptions.password = config.redis.password;
-    }
-
-    // Add TLS configuration for cloud Redis
-    if (config.redis.tls && config.env === 'production') {
-      clientOptions.socket = {
-        tls: true,
-        rejectUnauthorized: false,
+    // For Redis Cloud, we need to parse the URL and use proper connection format
+    let clientOptions: any;
+    
+    if (redisUrl.includes('redis-cloud.com')) {
+      // Parse Redis Cloud URL: redis://username:password@host:port
+      const url = new URL(redisUrl);
+      
+      clientOptions = {
+        username: url.username || 'default',
+        password: url.password || config.redis.password,
+        socket: {
+          host: url.hostname,
+          port: parseInt(url.port, 10),
+          // No TLS for Redis Cloud - it works without it
+        }
       };
+      
+      logger.info('Using Redis Cloud connection format:', {
+        host: url.hostname,
+        port: url.port,
+        username: url.username || 'default',
+        hasPassword: !!(url.password || config.redis.password),
+        tlsEnabled: false
+      });
+    } else {
+      // Use standard URL format for localhost
+      clientOptions = {
+        url: redisUrl,
+      };
+      
+      if (config.redis.password) {
+        clientOptions.password = config.redis.password;
+      }
+      
+      logger.info('Using standard Redis URL format:', {
+        hasUrl: !!clientOptions.url,
+        hasPassword: !!clientOptions.password
+      });
     }
 
     this.client = createClient(clientOptions);
 
-    // Error handling
+    // Enhanced error handling with more context
     this.client.on('error', (err) => {
-      logger.error('Redis Client Error:', err);
+      logger.error('Redis Client Error:', {
+        error: err.message,
+        code: err.code,
+        stack: err.stack,
+        redisUrl: redisUrl ? `${redisUrl.split('@')[0]}@***` : 'not set'
+      });
       this.isConnected = false;
     });
 
     this.client.on('connect', () => {
-      logger.info('Redis Client Connected');
+      logger.info('Redis Client Connected Successfully', {
+        url: redisUrl ? `${redisUrl.split('@')[0]}@***` : 'not set',
+        timestamp: new Date().toISOString()
+      });
       this.isConnected = true;
     });
 
     this.client.on('disconnect', () => {
-      logger.warn('Redis Client Disconnected');
+      logger.warn('Redis Client Disconnected', {
+        timestamp: new Date().toISOString()
+      });
       this.isConnected = false;
     });
   }
 
   private getRedisUrl(): string {
-    // Use cloud URL in production if available, otherwise use local URL
-    if (config.env === 'production' && config.redis.cloudUrl) {
-      return config.redis.cloudUrl;
+    // Prefer cloud URL if available, regardless of environment
+    const cloudUrl = config.redis.cloudUrl;
+    const localUrl = config.redis.url;
+    
+    logger.info('Redis URL Configuration:', {
+      environment: config.env,
+      hasCloudUrl: !!cloudUrl,
+      hasLocalUrl: !!localUrl,
+      cloudUrl: cloudUrl ? `${cloudUrl.split('@')[0]}@***` : 'not set',
+      localUrl: localUrl ? `${localUrl.split('@')[0]}@***` : 'not set'
+    });
+
+    // Use cloud URL if available, otherwise fallback to local
+    if (cloudUrl && cloudUrl.includes('redis-cloud.com')) {
+      logger.info('Using Redis Cloud URL');
+      return cloudUrl;
+    } else if (localUrl && localUrl.includes('redis-cloud.com')) {
+      logger.info('Using Redis Cloud URL from local config');
+      return localUrl;
+    } else {
+      logger.warn('No Redis Cloud URL found, using local Redis URL');
+      return localUrl || 'redis://localhost:6379';
     }
-    return config.redis.url;
   }
 
   async connect(): Promise<void> {
     try {
       if (!this.isConnected) {
+        const redisUrl = this.getRedisUrl();
+        logger.info('Attempting to connect to Redis...', {
+          url: redisUrl ? `${redisUrl.split('@')[0]}@***` : 'not set',
+          timestamp: new Date().toISOString()
+        });
+        
         await this.client.connect();
-        logger.info(`Connected to Redis: ${this.getRedisUrl()}`);
+        
+        // Test the connection with a ping
+        const pingResponse = await this.client.ping();
+        logger.info('Redis connection successful!', {
+          url: redisUrl ? `${redisUrl.split('@')[0]}@***` : 'not set',
+          pingResponse,
+          timestamp: new Date().toISOString()
+        });
+      } else {
+        logger.info('Redis already connected, skipping connection attempt');
       }
     } catch (error) {
-      logger.error('Failed to connect to Redis:', error);
+      const redisUrl = this.getRedisUrl();
+      logger.error('Failed to connect to Redis:', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        code: (error as any)?.code,
+        stack: error instanceof Error ? error.stack : undefined,
+        url: redisUrl ? `${redisUrl.split('@')[0]}@***` : 'not set',
+        timestamp: new Date().toISOString()
+      });
       throw error;
     }
   }
