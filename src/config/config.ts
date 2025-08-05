@@ -62,7 +62,13 @@ const config: Config = {
   },
 
   cors: {
-    origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000'],
+    origin: process.env.CORS_ORIGIN?.split(',') || [
+      'http://localhost:3000',
+      'http://localhost:4000', 
+      'http://localhost:5000',
+      'http://localhost:8000',
+      'https://keypilot-theta.vercel.app'
+    ],
     credentials: process.env.CORS_CREDENTIALS === 'true',
   },
 
