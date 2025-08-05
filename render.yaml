@@ -1,14 +1,4 @@
 services:
-  # Redis Database Service
-  - type: redis
-    name: keypilot-redis
-    plan: starter # Free tier (25MB) - upgrade to standard for production
-    region: oregon # Choose: oregon, frankfurt, singapore
-    databases:
-      - name: keypilot
-        user: keypilot
-    ipAllowList: [] # Empty allows all IPs - restrict for production
-
   # KeyPilot Gateway Service
   - type: web
     name: keypilot-gateway
@@ -16,7 +6,7 @@ services:
     repo: https://github.com/Joeljaison391/KeyPilot.git # Replace with your repo URL
     rootDir: gateway-service
     dockerfilePath: ./Dockerfile
-    region: oregon # Same region as Redis for lower latency
+    region: oregon # Choose: oregon, frankfurt, singapore
     plan: starter # Free tier - upgrade to standard/professional for production
     buildCommand: "" # Docker handles the build
     startCommand: "" # Docker handles the start command
@@ -39,10 +29,13 @@ services:
       - key: APP_VERSION
         value: "1.0.0"
       - key: REDIS_URL
-        fromService:
-          type: redis
-          name: keypilot-redis
-          property: connectionString
+        value: redis://default:OxlMsSWxXn21KlfcvCiOIMy7wnorimPw@redis-19516.c73.us-east-1-2.ec2.redns.redis-cloud.com:19516
+      - key: REDIS_CLOUD_URL
+        value: redis://default:OxlMsSWxXn21KlfcvCiOIMy7wnorimPw@redis-19516.c73.us-east-1-2.ec2.redns.redis-cloud.com:19516
+      - key: REDIS_PASSWORD
+        value: OxlMsSWxXn21KlfcvCiOIMy7wnorimPw
+      - key: REDIS_TLS
+        value: "true"
       
       # Security - Generate strong secrets for production
       - key: SESSION_SECRET

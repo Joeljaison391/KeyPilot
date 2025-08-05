@@ -82,10 +82,10 @@ const config: Config = {
   },
 
   redis: {
-    url: process.env.REDIS_URL || 'redis://localhost:6379',
-    cloudUrl: process.env.REDIS_CLOUD_URL || '',
-    password: process.env.REDIS_PASSWORD || undefined,
-    tls: process.env.REDIS_TLS === 'true',
+    url: process.env.REDIS_URL || 'redis://default:OxlMsSWxXn21KlfcvCiOIMy7wnorimPw@redis-19516.c73.us-east-1-2.ec2.redns.redis-cloud.com:19516',
+    cloudUrl: process.env.REDIS_CLOUD_URL || 'redis://default:OxlMsSWxXn21KlfcvCiOIMy7wnorimPw@redis-19516.c73.us-east-1-2.ec2.redns.redis-cloud.com:19516',
+    password: process.env.REDIS_PASSWORD || 'OxlMsSWxXn21KlfcvCiOIMy7wnorimPw',
+    tls: process.env.REDIS_TLS === 'true' || process.env.NODE_ENV === 'production',
   },
 
   session: {
