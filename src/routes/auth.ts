@@ -284,6 +284,26 @@ router.get('/demo-users', (_req: Request, res: Response) => {
     success: true,
     demoUsers: users,
     totalUsers: users.length,
+    apiInfo: {
+      loginEndpoint: 'POST /auth/login',
+      demoApiKeyEndpoint: 'POST /auth/demo-api-key',
+      loginExample: {
+        method: 'POST',
+        url: '/auth/login',
+        body: {
+          userId: 'demo1',
+          password: 'pass1'
+        }
+      },
+      demoApiKeyExample: {
+        method: 'POST',
+        url: '/auth/demo-api-key',
+        body: {
+          userId: 'demo1',
+          token: '<token_from_login_response>'
+        }
+      }
+    }
   });
 });
 
@@ -1367,6 +1387,212 @@ router.delete('/delete-key',
         success: false,
         error: 'Internal server error',
         message: 'An error occurred while deleting the API key',
+      });
+    }
+  }
+);
+
+// Demo API Key route - provides random API keys for testing
+router.post('/demo-api-key',
+  validateRequest([
+    body('userId')
+      .notEmpty()
+      .withMessage('userId is required')
+      .matches(/^[a-zA-Z0-9_-]+$/)
+      .withMessage('userId can only contain letters, numbers, underscores, and hyphens'),
+    body('token')
+      .notEmpty()
+      .withMessage('token is required')
+      .isLength({ min: 8, max: 100 })
+      .withMessage('token must be between 8 and 100 characters'),
+  ]),
+  async (req: Request, res: Response) => {
+    try {
+      const { userId, token } = req.body;
+
+      logger.info(`Demo API key request for user: ${userId}`, {
+        requestId: req.requestId,
+        userId,
+      });
+
+      // Step 1: Check if user is a demo user
+      if (!config.demoUsers[userId]) {
+        logger.warn(`Non-demo user attempted to get demo API key: ${userId}`, {
+          requestId: req.requestId,
+        });
+        res.status(StatusCodes.FORBIDDEN).json({
+          success: false,
+          error: 'Access denied',
+          message: 'Demo API keys are only available for demo users',
+        });
+        return;
+      }
+
+      // Step 2: Verify user session is active
+      const userSession = await redisService.getUserSession(userId);
+      if (!userSession || userSession.status !== 'active') {
+        logger.warn(`Inactive user attempted to get demo API key: ${userId}`, {
+          requestId: req.requestId,
+        });
+        res.status(StatusCodes.UNAUTHORIZED).json({
+          success: false,
+          error: 'Session required',
+          message: 'Please login first to get demo API keys',
+        });
+        return;
+      }
+
+      // Step 3: Verify the provided token matches the session token
+      if (userSession.token !== token) {
+        logger.warn(`Invalid token provided for demo API key: ${userId}`, {
+          requestId: req.requestId,
+        });
+        res.status(StatusCodes.UNAUTHORIZED).json({
+          success: false,
+          error: 'Invalid token',
+          message: 'The provided token does not match your active session',
+        });
+        return;
+      }
+
+      // Step 4: Sample API keys for different providers
+      const sampleApiKeys = [
+        {
+          provider: 'openai',
+          key: 'sk-demo1234567890abcdef1234567890abcdef1234567890abcdef',
+          description: 'OpenAI GPT-4 Demo Key for text generation and chat completion',
+          capabilities: ['text-generation', 'chat-completion', 'code-generation'],
+          rateLimit: '100 requests/hour',
+          tokenLimit: '10,000 tokens/day'
+        },
+        {
+          provider: 'anthropic',
+          key: 'sk-ant-demo9876543210fedcba9876543210fedcba9876543210fedcba',
+          description: 'Anthropic Claude Demo Key for advanced reasoning and analysis',
+          capabilities: ['text-analysis', 'reasoning', 'long-context-processing'],
+          rateLimit: '50 requests/hour',
+          tokenLimit: '20,000 tokens/day'
+        },
+        {
+          provider: 'google',
+          key: 'AIzaSyDemo_1234567890abcdefghijklmnopqrstuvwxyz',
+          description: 'Google Gemini Demo Key for multimodal AI tasks',
+          capabilities: ['text-generation', 'image-analysis', 'multimodal'],
+          rateLimit: '75 requests/hour',
+          tokenLimit: '15,000 tokens/day'
+        },
+        {
+          provider: 'openai-dalle',
+          key: 'sk-img-demo1234567890abcdef1234567890abcdef1234567890',
+          description: 'OpenAI DALL-E Demo Key for image generation',
+          capabilities: ['image-generation', 'image-editing', 'image-variations'],
+          rateLimit: '20 images/hour',
+          tokenLimit: '100 images/day'
+        },
+        {
+          provider: 'stability',
+          key: 'sk-stab-demo9876543210fedcba9876543210fedcba9876543210',
+          description: 'Stability AI Demo Key for advanced image generation',
+          capabilities: ['image-generation', 'style-transfer', 'upscaling'],
+          rateLimit: '30 images/hour',
+          tokenLimit: '150 images/day'
+        },
+        {
+          provider: 'huggingface',
+          key: 'hf_demo1234567890abcdefghijklmnopqrstuvwxyz1234567890',
+          description: 'Hugging Face Demo Key for various ML models',
+          capabilities: ['nlp', 'computer-vision', 'audio-processing'],
+          rateLimit: '200 requests/hour',
+          tokenLimit: '50,000 tokens/day'
+        }
+      ];
+
+      // Step 5: Select a random API key
+      const randomIndex = Math.floor(Math.random() * sampleApiKeys.length);
+      const selectedApiKey = sampleApiKeys[randomIndex];
+
+      // Ensure we have a valid API key
+      if (!selectedApiKey) {
+        res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
+          success: false,
+          error: 'No API keys available',
+          message: 'Unable to generate demo API key at this time',
+        });
+        return;
+      }
+
+      // Step 6: Add usage tracking and metadata
+      const apiKeyWithMetadata = {
+        ...selectedApiKey,
+        isDemo: true,
+        assignedTo: userId,
+        assignedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
+        usageStats: {
+          requestsUsed: 0,
+          tokensUsed: 0,
+          lastUsed: null,
+        },
+        restrictions: {
+          demoMode: true,
+          maxDailyRequests: 50,
+          maxDailyTokens: 5000,
+          allowedEndpoints: ['chat', 'completion', 'generation'],
+        },
+        support: {
+          documentation: 'https://docs.keypilot.dev/demo-keys',
+          examples: 'https://github.com/keypilot/examples',
+          support: 'demo-support@keypilot.dev'
+        }
+      };
+
+      logger.info(`Demo API key provided to user: ${userId}`, {
+        requestId: req.requestId,
+        provider: selectedApiKey.provider,
+        keyId: selectedApiKey.key.substring(0, 10) + '***',
+      });
+
+      // Step 7: Response
+      res.status(StatusCodes.OK).json({
+        success: true,
+        message: 'Demo API key generated successfully',
+        apiKey: apiKeyWithMetadata,
+        warning: 'This is a demo API key with limited functionality and 24-hour expiration',
+        usage: {
+          instructions: 'Use this key in your API requests as: Authorization: Bearer <key>',
+          testEndpoint: 'POST /api/proxy/chat',
+          exampleRequest: {
+            headers: {
+              'Authorization': `Bearer ${selectedApiKey.key}`,
+              'Content-Type': 'application/json'
+            },
+            body: {
+              model: selectedApiKey.provider === 'openai' ? 'gpt-4' : 
+                     selectedApiKey.provider === 'anthropic' ? 'claude-3' :
+                     selectedApiKey.provider === 'google' ? 'gemini-pro' : 'default',
+              messages: [{ role: 'user', content: 'Hello, this is a test message!' }]
+            }
+          }
+        },
+        tips: [
+          'Demo keys have limited rate limits - use them for testing only',
+          'Keys expire after 24 hours for security',
+          'Monitor your usage in the dashboard',
+          'Contact support if you need production keys'
+        ]
+      });
+
+    } catch (error) {
+      logger.error('Demo API key generation error:', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        requestId: req.requestId,
+      });
+
+      res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
+        success: false,
+        error: 'Internal server error',
+        message: 'An error occurred while generating demo API key',
       });
     }
   }
