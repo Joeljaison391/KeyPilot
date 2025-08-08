@@ -16,6 +16,15 @@ router.get('/', (_req: Request, res: Response) => {
       health: '/health',
       api: '/api',
       docs: '/api/docs',
+      analytics: {
+        patterns: '/api/analytics/patterns/:apiKey',
+        usage: '/api/analytics/usage',
+        endpoints: '/api/analytics/endpoints',
+        rateLimits: '/api/analytics/rate-limits',
+        errors: '/api/analytics/errors',
+        logs: '/api/analytics/logs',
+        performance: '/api/analytics/performance'
+      }
     },
     timestamp: new Date().toISOString(),
   });

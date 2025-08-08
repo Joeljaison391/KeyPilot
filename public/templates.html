@@ -98,6 +98,107 @@
         }
         
         .section {
+            margin-bottom: 40px;
+        }
+        
+        .section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 2em;
+        }
+        
+        .endpoint {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .endpoint h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+        
+        .endpoint-details {
+            margin-bottom: 15px;
+        }
+        
+        .method {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 5px;
+            color: white;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        
+        .get {
+            background: #28a745;
+        }
+        
+        .post {
+            background: #007bff;
+        }
+        
+        .delete {
+            background: #dc3545;
+        }
+        
+        .put {
+            background: #ffc107;
+            color: #333;
+        }
+        
+        .url {
+            font-family: monospace;
+            background: #e9ecef;
+            padding: 5px 10px;
+            border-radius: 5px;
+        }
+        
+        .params table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        
+        .params th, .params td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        .params th {
+            background: #f8f9fa;
+        }
+        
+        .response {
+            background: #272822;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .description {
+            margin: 15px 0;
+            line-height: 1.6;
+        }
+        
+        code {
+            font-family: monospace;
+            background: #f8f9fa;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+        
+        .analytics-section {
+            margin-top: 40px;
+            padding: 30px;
+            background: #f8f9fa;
+            border-radius: 15px;
+            border-left: 5px solid #667eea;
+        }
             margin-bottom: 50px;
         }
         
@@ -1953,7 +2054,120 @@ Content-Type: application/json</div>
                         </div>
 
                         <div class="subsection">
-                            <h4 class="subsection-title">📈 5. Feedback & Analytics System</h4>
+                            <h4 class="subsection-title">� 5. Advanced Analytics System</h4>
+                            <div class="analytics-section">
+                                <h3>Real-time Analytics Endpoints</h3>
+                                
+                                <div class="endpoint">
+                                    <h4>Request Patterns</h4>
+                                    <div class="endpoint-details">
+                                        <span class="method get">GET</span>
+                                        <span class="url">/api/analytics/patterns/:apiKey</span>
+                                    </div>
+                                    <p>Track endpoint usage patterns and timing information</p>
+                                    <div class="response-example">
+                                        Returns: Frequency, methods, last access times
+                                    </div>
+                                </div>
+
+                                <div class="endpoint">
+                                    <h4>Usage Analytics</h4>
+                                    <div class="endpoint-details">
+                                        <span class="method get">GET</span>
+                                        <span class="url">/api/analytics/usage</span>
+                                    </div>
+                                    <p>Comprehensive API usage statistics</p>
+                                    <div class="response-example">
+                                        Returns: Total requests, unique endpoints, error rates
+                                    </div>
+                                </div>
+
+                                <div class="endpoint">
+                                    <h4>Endpoint Metrics</h4>
+                                    <div class="endpoint-details">
+                                        <span class="method get">GET</span>
+                                        <span class="url">/api/analytics/endpoints</span>
+                                    </div>
+                                    <p>Detailed metrics for each endpoint</p>
+                                    <div class="response-example">
+                                        Returns: Hit counts, latency, error rates
+                                    </div>
+                                </div>
+
+                                <div class="endpoint">
+                                    <h4>Rate Limit Status</h4>
+                                    <div class="endpoint-details">
+                                        <span class="method get">GET</span>
+                                        <span class="url">/api/analytics/rate-limits</span>
+                                    </div>
+                                    <p>Monitor rate limit status across API keys</p>
+                                    <div class="response-example">
+                                        Returns: Remaining calls, reset times
+                                    </div>
+                                </div>
+
+                                <div class="endpoint">
+                                    <h4>Error Analytics</h4>
+                                    <div class="endpoint-details">
+                                        <span class="method get">GET</span>
+                                        <span class="url">/api/analytics/errors</span>
+                                    </div>
+                                    <p>Error pattern analysis</p>
+                                    <div class="response-example">
+                                        Returns: Error frequency, types, affected endpoints
+                                    </div>
+                                </div>
+
+                                <div class="endpoint">
+                                    <h4>Request Logs</h4>
+                                    <div class="endpoint-details">
+                                        <span class="method get">GET</span>
+                                        <span class="url">/api/analytics/logs</span>
+                                    </div>
+                                    <p>Detailed request logging with pagination</p>
+                                    <div class="response-example">
+                                        Returns: Request details, timing, status codes
+                                    </div>
+                                </div>
+
+                                <div class="endpoint">
+                                    <h4>Performance Metrics</h4>
+                                    <div class="endpoint-details">
+                                        <span class="method get">GET</span>
+                                        <span class="url">/api/analytics/performance</span>
+                                    </div>
+                                    <p>Time-series performance data</p>
+                                    <div class="response-example">
+                                        Returns: Latency trends, success rates
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="flow-step">
+                                <div class="flow-step-title">Redis Implementation</div>
+                                <strong>Data Structures:</strong><br>
+                                • Sorted Sets for time-series data<br>
+                                • Hashes for metrics storage<br>
+                                • Lists for log retention<br>
+                                • Sets for unique counters<br>
+                                <strong>Key Patterns:</strong><br>
+                                • <code>analytics:{userId}:metrics</code><br>
+                                • <code>analytics:{userId}:logs</code><br>
+                                • <code>patterns:{apiKey}:{endpoint}</code>
+                            </div>
+
+                            <div class="flow-step">
+                                <div class="flow-step-title">Features & Benefits</div>
+                                • <strong>Real-time:</strong> Instant metric updates<br>
+                                • <strong>Scalable:</strong> Efficient data structures<br>
+                                • <strong>Historical:</strong> Time-series analysis<br>
+                                • <strong>Actionable:</strong> Pattern recognition<br>
+                                • <strong>Performance:</strong> Sub-millisecond queries
+                            </div>
+                        </div>
+
+                        <div class="subsection">
+                            <h4 class="subsection-title">📈 6. Feedback System</h4>
                             <div class="flow-step">
                                 <div class="flow-step-title">Implementation</div>
                                 <strong>Data Structure:</strong> Redis Sorted Sets + Streams<br>

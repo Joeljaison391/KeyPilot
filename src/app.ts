@@ -19,8 +19,10 @@ import templatesRoutes from './routes/templates';
 import feedbackRoutes from './routes/feedback';
 import cacheInspectorRoutes from './routes/cacheInspector';
 import intentTrendsRoutes from './routes/intentTrends';
+import analyticsRoutes from './routes/analytics';
 import { AppError } from './utils/AppError';
 import { redisService } from './utils/redisService';
+import { requestTracker } from './middleware/requestTracker';
 
 class App {
   public app: Application;
@@ -90,6 +92,9 @@ class App {
       }));
     }
 
+    // Request tracking for analytics
+    this.app.use(requestTracker);
+
     // Rate limiting
     const limiter = rateLimit({
       windowMs: config.rateLimit.windowMs,
@@ -131,6 +136,9 @@ class App {
     
     // Templates routes
     this.app.use('/api', templatesRoutes);
+    
+    // Analytics routes
+    this.app.use('/api', analyticsRoutes);
     
     // API routes (general API endpoints - should be last in /api namespace)
     this.app.use('/api', apiRoutes);

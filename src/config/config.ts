@@ -19,8 +19,11 @@ interface Config {
     maxRequests: number;
   };
   cors: {
-    origin: string | string[];
+    origin: string | string[] | ((origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => void);
     credentials: boolean;
+    methods: string[];
+    allowedHeaders: string[];
+    optionsSuccessStatus: number;
   };
   security: {
     jwtSecret: string;
@@ -61,16 +64,35 @@ const config: Config = {
     maxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
   },
 
-  cors: {
-    origin: process.env.CORS_ORIGIN?.split(',') || [
-      'http://localhost:3000',
-      'http://localhost:4000', 
-      'http://localhost:5000',
-      'http://localhost:8000',
-      'https://keypilot-theta.vercel.app'
-    ],
-    credentials: process.env.CORS_CREDENTIALS === 'true',
+cors: {
+    origin: function (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
+      const allowedOrigins = [
+        'http://localhost:3000',
+        'http://localhost:4000', 
+        'http://localhost:5000',
+        'http://localhost:8000',
+        'http://localhost:8001',
+        'http://localhost:5174',
+        'http://localhost:5173',
+        'https://keypilot-theta.vercel.app'
+      ];
+      
+      // Allow requests with no origin (mobile apps, curl, etc.)
+      if (!origin) return callback(null, true);
+      
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        console.log(`CORS blocked origin: ${origin}`);
+        callback(new Error(`Not allowed by CORS. Origin: ${origin}`), false);
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    optionsSuccessStatus: 200
   },
+
 
   security: {
     jwtSecret: process.env.JWT_SECRET || 'fallback-secret-change-this',

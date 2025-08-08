@@ -219,6 +219,248 @@ export class RedisService {
     return this.isConnected;
   }
 
+  // Analytics Methods
+  
+  async getRequestPatterns(apiKey: string): Promise<Array<{
+    endpoint: string;
+    method: string;
+    frequency: number;
+    lastAccessed: string;
+  }>> {
+    try {
+      const patterns = await this.client.hGetAll(`patterns:${apiKey}`);
+      return Object.entries(patterns).map(([endpoint, data]) => ({
+        endpoint,
+        ...JSON.parse(data)
+      }));
+    } catch (error) {
+      logger.error(`Error getting request patterns for API key ${apiKey}:`, error);
+      throw error;
+    }
+  }
+
+  async getUserApiAnalytics(userId: string): Promise<{
+    totalRequests: number;
+    uniqueEndpoints: number;
+    averageLatency: number;
+    errorRate: number;
+  }> {
+    try {
+      const analytics = await this.client.hGetAll(`analytics:${userId}`);
+      return {
+        totalRequests: parseInt(analytics.totalRequests || '0'),
+        uniqueEndpoints: parseInt(analytics.uniqueEndpoints || '0'),
+        averageLatency: parseFloat(analytics.averageLatency || '0'),
+        errorRate: parseFloat(analytics.errorRate || '0')
+      };
+    } catch (error) {
+      logger.error(`Error getting API analytics for user ${userId}:`, error);
+      throw error;
+    }
+  }
+
+  async getEndpointMetrics(userId: string): Promise<Array<{
+    endpoint: string;
+    hits: number;
+    averageLatency: number;
+    errorCount: number;
+  }>> {
+    try {
+      const metrics = await this.client.hGetAll(`endpoints:${userId}`);
+      return Object.entries(metrics).map(([endpoint, data]) => ({
+        endpoint,
+        ...JSON.parse(data)
+      }));
+    } catch (error) {
+      logger.error(`Error getting endpoint metrics for user ${userId}:`, error);
+      throw error;
+    }
+  }
+
+  async getRateLimitStats(userId: string): Promise<Array<{
+    apiKey: string;
+    remaining: number;
+    reset: number;
+    total: number;
+  }>> {
+    try {
+      const keys = await this.client.sMembers(`user:${userId}:apikeys`);
+      return await Promise.all(
+        keys.map(async (apiKey) => {
+          const data = await this.client.hGetAll(`ratelimit:${apiKey}`);
+          return {
+            apiKey,
+            remaining: parseInt(data.remaining || '0'),
+            reset: parseInt(data.reset || '0'),
+            total: parseInt(data.total || '0')
+          };
+        })
+      );
+    } catch (error) {
+      logger.error(`Error getting rate limit stats for user ${userId}:`, error);
+      throw error;
+    }
+  }
+
+  async getErrorAnalytics(userId: string): Promise<Array<{
+    errorCode: string;
+    count: number;
+    lastOccurred: string;
+    endpoints: string[];
+  }>> {
+    try {
+      const errors = await this.client.hGetAll(`errors:${userId}`);
+      return Object.entries(errors).map(([errorCode, data]) => ({
+        errorCode,
+        ...JSON.parse(data)
+      }));
+    } catch (error) {
+      logger.error(`Error getting error analytics for user ${userId}:`, error);
+      throw error;
+    }
+  }
+
+  async getRequestLogs(
+    userId: string,
+    page: number,
+    limit: number
+  ): Promise<{
+    logs: Array<{
+      timestamp: string;
+      method: string;
+      endpoint: string;
+      statusCode: number;
+      latency: number;
+      apiKey: string;
+    }>;
+    total: number;
+  }> {
+    try {
+      const start = (page - 1) * limit;
+      const end = start + limit - 1;
+      
+      const logs = await this.client.zRange(`logs:${userId}`, start, end);
+      const total = await this.client.zCard(`logs:${userId}`);
+      
+      return {
+        logs: logs.map(log => JSON.parse(log)),
+        total
+      };
+    } catch (error) {
+      logger.error(`Error getting request logs for user ${userId}:`, error);
+      throw error;
+    }
+  }
+
+  async getPerformanceMetrics(
+    userId: string,
+    timeframe: string
+  ): Promise<Array<{
+    timestamp: string;
+    averageLatency: number;
+    requestCount: number;
+    errorCount: number;
+    successRate: number;
+  }>> {
+    try {
+      const now = Date.now();
+      let timeRange: number;
+      
+      switch(timeframe) {
+        case '1h':
+          timeRange = 3600000;
+          break;
+        case '24h':
+          timeRange = 86400000;
+          break;
+        case '7d':
+          timeRange = 604800000;
+          break;
+        default:
+          timeRange = 86400000; // Default to 24h
+      }
+      
+      const metrics = await this.client.zRangeByScore(
+        `metrics:${userId}`,
+        now - timeRange,
+        now
+      );
+      
+      return metrics.map(metric => JSON.parse(metric));
+    } catch (error) {
+      logger.error(`Error getting performance metrics for user ${userId}:`, error);
+      throw error;
+    }
+  }
+
+  async recordRequest(
+    userId: string,
+    apiKey: string,
+    request: {
+      method: string;
+      endpoint: string;
+      statusCode: number;
+      latency: number;
+    }
+  ): Promise<void> {
+    try {
+      const now = new Date().toISOString();
+      const requestLog = {
+        timestamp: now,
+        ...request,
+        apiKey
+      };
+
+      await Promise.all([
+        // Update request patterns
+        this.client.hIncrBy(`patterns:${apiKey}:${request.endpoint}`, 'frequency', 1),
+        this.client.hSet(`patterns:${apiKey}:${request.endpoint}`, 'lastAccessed', now),
+        this.client.hSet(`patterns:${apiKey}:${request.endpoint}`, 'method', request.method),
+        
+        // Add to logs
+        this.client.zAdd(`logs:${userId}`, {
+          score: Date.now(),
+          value: JSON.stringify(requestLog)
+        }),
+        
+        // Update metrics
+        this.updateMetrics(userId, request)
+      ]);
+    } catch (error) {
+      logger.error('Error recording request:', error);
+      throw error;
+    }
+  }
+
+  private async updateMetrics(
+    userId: string,
+    request: {
+      statusCode: number;
+      latency: number;
+    }
+  ): Promise<void> {
+    try {
+      const now = Date.now();
+      const isError = request.statusCode >= 400;
+      
+      const metrics = {
+        timestamp: new Date().toISOString(),
+        averageLatency: request.latency,
+        requestCount: 1,
+        errorCount: isError ? 1 : 0,
+        successRate: isError ? 0 : 100
+      };
+      
+      await this.client.zAdd(`metrics:${userId}`, {
+        score: now,
+        value: JSON.stringify(metrics)
+      });
+    } catch (error) {
+      logger.error('Error updating metrics:', error);
+      throw error;
+    }
+  }
+
   // Specific methods for user session management
   async getUserSession(userId: string): Promise<any | null> {
     try {
