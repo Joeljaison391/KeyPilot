@@ -10,6 +10,44 @@ interface Config {
     name: string;
     version: string;
   };
+  quota: {
+    daily: number;
+    monthly: number;
+    alertThresholds: number[];
+    autoDisable: boolean;
+  };
+  cost: {
+    tracking: boolean;
+    tokenPricing: Record<string, number>;
+    savingsGoal: number;
+  };
+  rateLimiting: {
+    dynamic: boolean;
+    baseLimit: number;
+    scalingFactor: number;
+    priorityLevels: number;
+  };
+  trends: {
+    analysisWindow: number;
+    anomalyThreshold: number;
+    patternRecognition: boolean;
+  };
+  fallback: {
+    enabled: boolean;
+    maxRetries: number;
+    backoffMs: number;
+    strategy: 'round-robin' | 'priority';
+  };
+  collaboration: {
+    enabled: boolean;
+    maxTeamSize: number;
+    roleHierarchy: string[];
+  };
+  templates: {
+    versionControl: boolean;
+    maxVersions: number;
+    autoValidation: boolean;
+  };
   log: {
     level: string;
     format: string;
@@ -52,6 +90,55 @@ const config: Config = {
   app: {
     name: process.env.APP_NAME || 'gateway-service',
     version: process.env.APP_VERSION || '1.0.0',
+  },
+
+  quota: {
+    daily: parseInt(process.env.QUOTA_DAILY || '1000', 10),
+    monthly: parseInt(process.env.QUOTA_MONTHLY || '25000', 10),
+    alertThresholds: [50, 80, 90, 95],
+    autoDisable: process.env.QUOTA_AUTO_DISABLE === 'true'
+  },
+
+  cost: {
+    tracking: true,
+    tokenPricing: {
+      'gpt-4': 0.03,
+      'gpt-3.5-turbo': 0.002,
+      'claude-v1': 0.015
+    },
+    savingsGoal: 20 // 20% savings target
+  },
+
+  rateLimiting: {
+    dynamic: true,
+    baseLimit: parseInt(process.env.RATE_BASE_LIMIT || '100', 10),
+    scalingFactor: parseFloat(process.env.RATE_SCALING_FACTOR || '1.5'),
+    priorityLevels: 3
+  },
+
+  trends: {
+    analysisWindow: parseInt(process.env.TREND_WINDOW || '86400', 10), // 24 hours
+    anomalyThreshold: parseFloat(process.env.ANOMALY_THRESHOLD || '2.0'),
+    patternRecognition: true
+  },
+
+  fallback: {
+    enabled: true,
+    maxRetries: parseInt(process.env.MAX_RETRIES || '3', 10),
+    backoffMs: parseInt(process.env.BACKOFF_MS || '1000', 10),
+    strategy: 'priority'
+  },
+
+  collaboration: {
+    enabled: true,
+    maxTeamSize: parseInt(process.env.MAX_TEAM_SIZE || '10', 10),
+    roleHierarchy: ['viewer', 'user', 'admin', 'owner']
+  },
+
+  templates: {
+    versionControl: true,
+    maxVersions: parseInt(process.env.MAX_TEMPLATE_VERSIONS || '5', 10),
+    autoValidation: true
   },
 
   log: {

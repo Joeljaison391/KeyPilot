@@ -1964,6 +1964,128 @@ Content-Type: application/json</div>
                 </div>
             </section>
 
+            <!-- Cost Analytics Routes -->
+            <section id="cost-analytics" class="section">
+                <h2 class="section-title">
+                    💰 Cost Analytics & Optimization
+                </h2>
+
+                <!-- Track Token Usage -->
+                <div class="route-card">
+                    <div class="route-header">
+                        <span class="route-method">POST</span>
+                        <span class="route-url">/api/analytics/token-usage</span>
+                        <span class="badge auth-required">Auth Required</span>
+                        <span class="badge development-only">Redis Powered</span>
+                    </div>
+                    <div class="route-body">
+                        <p class="route-description">
+                            Track and analyze token usage and associated costs for different AI models. Uses Redis Time Series for temporal analytics and Hash Sets for aggregated statistics.
+                        </p>
+
+                        <div class="subsection">
+                            <h4 class="subsection-title">📋 Request Body</h4>
+                            <div class="code-container">
+                                <div class="code-header">
+                                    <span>JSON Request</span>
+                                    <button class="copy-btn" onclick="copyToClipboard('token-usage-request')">Copy</button>
+                                </div>
+                                <div class="code-content" id="token-usage-request">{
+  "userId": "user123",
+  "model": "gpt-4",
+  "tokens": 1500,
+  "timestamp": 1690000000000
+}</div>
+                            </div>
+                        </div>
+
+                        <div class="subsection">
+                            <h4 class="subsection-title">🧪 cURL Test Command</h4>
+                            <div class="code-container">
+                                <div class="code-header">
+                                    <span>cURL</span>
+                                    <button class="copy-btn" onclick="copyToClipboard('token-usage-curl')">Copy</button>
+                                </div>
+                                <div class="code-content" id="token-usage-curl">curl -X POST "http://localhost:3000/api/analytics/token-usage" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userId": "user123",
+    "model": "gpt-4",
+    "tokens": 1500
+  }'</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Get Cost Analytics -->
+                <div class="route-card">
+                    <div class="route-header">
+                        <span class="route-method">GET</span>
+                        <span class="route-url">/api/analytics/costs/{userId}</span>
+                        <span class="badge auth-required">Auth Required</span>
+                        <span class="badge development-only">Redis Powered</span>
+                    </div>
+                    <div class="route-body">
+                        <p class="route-description">
+                            Get comprehensive cost analytics including total costs, model-specific breakdowns, usage patterns, and cost optimization recommendations.
+                        </p>
+
+                        <div class="subsection">
+                            <h4 class="subsection-title">📋 Query Parameters</h4>
+                            <div class="code-container">
+                                <div class="code-header">
+                                    <span>Parameters</span>
+                                </div>
+                                <div class="code-content">• days: Number of days to analyze (1-90, default: 30)
+• token: Your session token (required)</div>
+                            </div>
+                        </div>
+
+                        <div class="subsection">
+                            <h4 class="subsection-title">📤 Sample Response</h4>
+                            <div class="response-container">
+                                <div class="success-response">
+                                    <div class="response-header">✅ Cost Analysis Results</div>
+                                    <div class="response-content">{
+  "success": true,
+  "totalCost": 125.50,
+  "totalTokens": 1250000,
+  "modelBreakdown": {
+    "gpt-4": {
+      "tokens": 750000,
+      "cost": 100.00
+    },
+    "gpt-3.5-turbo": {
+      "tokens": 500000,
+      "cost": 25.50
+    }
+  },
+  "projectedSavings": 45.75,
+  "recommendations": [
+    "Consider scheduling bulk operations outside peak hours (10, 14, 20)",
+    "Use gpt-3.5-turbo for initial drafts to reduce costs"
+  ]
+}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="subsection">
+                            <h4 class="subsection-title">🧪 cURL Test Command</h4>
+                            <div class="code-container">
+                                <div class="code-header">
+                                    <span>cURL</span>
+                                    <button class="copy-btn" onclick="copyToClipboard('cost-analytics-curl')">Copy</button>
+                                </div>
+                                <div class="code-content" id="cost-analytics-curl">curl -X GET "http://localhost:3000/api/analytics/costs/user123?days=30&token=YOUR_TOKEN" \
+  -H "Content-Type: application/json"</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <!-- Redis Features & Implementations -->
             <section id="redis-features" class="section">
                 <h2 class="section-title">
