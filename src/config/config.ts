@@ -161,7 +161,8 @@ cors: {
         'http://localhost:8001',
         'http://localhost:5174',
         'http://localhost:5173',
-        'https://keypilot-theta.vercel.app'
+        'https://keypilot-theta.vercel.app',
+        'https://key-pilot-frontend.vercel.app'
       ];
       
       // Allow requests with no origin (mobile apps, curl, etc.)
