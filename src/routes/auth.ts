@@ -274,37 +274,65 @@ router.get('/demo-users', (_req: Request, res: Response) => {
     return;
   }
 
-  const users = Object.keys(config.demoUsers).map(userId => ({
-    userId,
-    // Don't expose passwords in response
-    passwordHint: `${config.demoUsers[userId]?.substring(0, 2)}***`,
-  }));
+  (async () => {
+    // Get all demo user IDs
+    const demoUserIds = Object.keys(config.demoUsers);
+    // Check if all demo users are active in Redis
+    const activeStatuses = await Promise.all(
+      demoUserIds.map(async (userId) => {
+        const session = await redisService.getUserSession(userId);
+        return session && session.status === 'active';
+      })
+    );
+    const allActive = activeStatuses.length > 0 && activeStatuses.every(Boolean);
 
-  res.status(StatusCodes.OK).json({
-    success: true,
-    demoUsers: users,
-    totalUsers: users.length,
-    apiInfo: {
-      loginEndpoint: 'POST /auth/login',
-      demoApiKeyEndpoint: 'POST /auth/demo-api-key',
-      loginExample: {
-        method: 'POST',
-        url: '/auth/login',
-        body: {
-          userId: 'demo1',
-          password: 'pass1'
-        }
-      },
-      demoApiKeyExample: {
-        method: 'POST',
-        url: '/auth/demo-api-key',
-        body: {
-          userId: 'demo1',
-          token: '<token_from_login_response>'
+    // If all are active, create 3 new demo users and add to config and Redis
+    if (allActive) {
+  const newUsers: Record<string, string> = {};
+      for (let i = 0; i < 3; i++) {
+        const newId = `demo${Date.now()}${Math.floor(Math.random()*10000)}`;
+        const newPass = Math.random().toString(36).slice(-8);
+        newUsers[newId] = newPass;
+        // Set a session for the new user (inactive by default, 1 day TTL)
+        await redisService.setUserSession(newId, { status: 'inactive', token: '', activated_at: Date.now() }, 24*60*60);
+      }
+      // Add new users to config.demoUsers (in-memory)
+      Object.assign(config.demoUsers, newUsers);
+    }
+
+    // Prepare the updated list
+    const users = Object.keys(config.demoUsers).map(userId => ({
+      userId,
+      // Don't expose passwords in response
+      passwordHint: `${config.demoUsers[userId]?.substring(0, 2)}***`,
+    }));
+
+    res.status(StatusCodes.OK).json({
+      success: true,
+      demoUsers: users,
+      totalUsers: users.length,
+      apiInfo: {
+        loginEndpoint: 'POST /auth/login',
+        demoApiKeyEndpoint: 'POST /auth/demo-api-key',
+        loginExample: {
+          method: 'POST',
+          url: '/auth/login',
+          body: {
+            userId: 'demo1',
+            password: 'pass1'
+          }
+        },
+        demoApiKeyExample: {
+          method: 'POST',
+          url: '/auth/demo-api-key',
+          body: {
+            userId: 'demo1',
+            token: '<token_from_login_response>'
+          }
         }
       }
-    }
-  });
+    });
+  })();
 });
 
 // Development route to display all Redis data
@@ -1393,29 +1421,55 @@ router.delete('/delete-key',
 );
 
 // Demo API Key route - provides random API keys for testing
-router.post('/demo-api-key',
-  validateRequest([
-    body('userId')
-      .notEmpty()
-      .withMessage('userId is required')
-      .matches(/^[a-zA-Z0-9_-]+$/)
-      .withMessage('userId can only contain letters, numbers, underscores, and hyphens'),
-    body('token')
-      .notEmpty()
-      .withMessage('token is required')
-      .isLength({ min: 8, max: 100 })
-      .withMessage('token must be between 8 and 100 characters'),
-  ]),
+router.get('/demo-api-key',
   async (req: Request, res: Response) => {
     try {
-      const { userId, token } = req.body;
-
+      // Get userId and token from query parameters or headers
+      const userId = req.query.userId as string || req.headers['x-user-id'] as string;
+      const token = req.query.token as string || req.headers['x-user-token'] as string;
+      
+      console.log(`Demo API key request for user: ${userId}`);
       logger.info(`Demo API key request for user: ${userId}`, {
         requestId: req.requestId,
         userId,
       });
 
-      // Step 1: Check if user is a demo user
+      // Validate required parameters
+      if (!userId || !token) {
+        res.status(StatusCodes.BAD_REQUEST).json({
+          success: false,
+          error: 'Missing parameters',
+          message: 'userId and token are required (via query params or headers)',
+        });
+        return;
+      }
+
+
+      // Step 1: Check if user is a demo user (with auto-expansion logic)
+      const demoUserIds = Object.keys(config.demoUsers);
+      // Check if all demo users are active
+      const activeStatuses = await Promise.all(
+        demoUserIds.map(async (id) => {
+          const session = await redisService.getUserSession(id);
+          return session && session.status === 'active';
+        })
+      );
+      const allActive = activeStatuses.length > 0 && activeStatuses.every(Boolean);
+      if (allActive) {
+        // Generate 3 new demo users
+        const newUsers: Record<string, string> = {};
+        for (let i = 0; i < 3; i++) {
+          const newId = `demo${Date.now()}${Math.floor(Math.random()*10000)}`;
+          const newPass = Math.random().toString(36).slice(-8);
+          newUsers[newId] = newPass;
+          // Set a session for the new user (inactive by default)
+          await redisService.setUserSession(newId, { status: 'inactive', token: '', activated_at: Date.now() }, 24*60*60); // 1 day TTL
+        }
+        // Add new users to config.demoUsers (in-memory)
+        Object.assign(config.demoUsers, newUsers);
+        logger.info('Auto-created 3 new demo users:', { newUsers });
+      }
+
       if (!config.demoUsers[userId]) {
         logger.warn(`Non-demo user attempted to get demo API key: ${userId}`, {
           requestId: req.requestId,
@@ -1457,54 +1511,12 @@ router.post('/demo-api-key',
 
       // Step 4: Sample API keys for different providers
       const sampleApiKeys = [
-        {
-          provider: 'openai',
-          key: 'sk-demo1234567890abcdef1234567890abcdef1234567890abcdef',
-          description: 'OpenAI GPT-4 Demo Key for text generation and chat completion',
-          capabilities: ['text-generation', 'chat-completion', 'code-generation'],
-          rateLimit: '100 requests/hour',
-          tokenLimit: '10,000 tokens/day'
-        },
-        {
-          provider: 'anthropic',
-          key: 'sk-ant-demo9876543210fedcba9876543210fedcba9876543210fedcba',
-          description: 'Anthropic Claude Demo Key for advanced reasoning and analysis',
-          capabilities: ['text-analysis', 'reasoning', 'long-context-processing'],
-          rateLimit: '50 requests/hour',
-          tokenLimit: '20,000 tokens/day'
-        },
-        {
-          provider: 'google',
-          key: 'AIzaSyDemo_1234567890abcdefghijklmnopqrstuvwxyz',
-          description: 'Google Gemini Demo Key for multimodal AI tasks',
-          capabilities: ['text-generation', 'image-analysis', 'multimodal'],
-          rateLimit: '75 requests/hour',
-          tokenLimit: '15,000 tokens/day'
-        },
-        {
-          provider: 'openai-dalle',
-          key: 'sk-img-demo1234567890abcdef1234567890abcdef1234567890',
-          description: 'OpenAI DALL-E Demo Key for image generation',
-          capabilities: ['image-generation', 'image-editing', 'image-variations'],
-          rateLimit: '20 images/hour',
-          tokenLimit: '100 images/day'
-        },
-        {
-          provider: 'stability',
-          key: 'sk-stab-demo9876543210fedcba9876543210fedcba9876543210',
-          description: 'Stability AI Demo Key for advanced image generation',
-          capabilities: ['image-generation', 'style-transfer', 'upscaling'],
-          rateLimit: '30 images/hour',
-          tokenLimit: '150 images/day'
-        },
-        {
-          provider: 'huggingface',
-          key: 'hf_demo1234567890abcdefghijklmnopqrstuvwxyz1234567890',
-          description: 'Hugging Face Demo Key for various ML models',
-          capabilities: ['nlp', 'computer-vision', 'audio-processing'],
-          rateLimit: '200 requests/hour',
-          tokenLimit: '50,000 tokens/day'
-        }
+        'sk-demo1234567890abcdef1234567890abcdef1234567890abcdef',
+        'sk-ant-demo9876543210fedcba9876543210fedcba9876543210fedcba',
+        'AIzaSyDemo_1234567890abcdefghijklmnopqrstuvwxyz',
+        'sk-img-demo1234567890abcdef1234567890abcdef1234567890',
+        'sk-stab-demo9876543210fedcba9876543210fedcba9876543210',
+        'hf_demo1234567890abcdefghijklmnopqrstuvwxyz1234567890'
       ];
 
       // Step 5: Select a random API key
@@ -1521,65 +1533,15 @@ router.post('/demo-api-key',
         return;
       }
 
-      // Step 6: Add usage tracking and metadata
-      const apiKeyWithMetadata = {
-        ...selectedApiKey,
-        isDemo: true,
-        assignedTo: userId,
-        assignedAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
-        usageStats: {
-          requestsUsed: 0,
-          tokensUsed: 0,
-          lastUsed: null,
-        },
-        restrictions: {
-          demoMode: true,
-          maxDailyRequests: 50,
-          maxDailyTokens: 5000,
-          allowedEndpoints: ['chat', 'completion', 'generation'],
-        },
-        support: {
-          documentation: 'https://docs.keypilot.dev/demo-keys',
-          examples: 'https://github.com/keypilot/examples',
-          support: 'demo-support@keypilot.dev'
-        }
-      };
-
       logger.info(`Demo API key provided to user: ${userId}`, {
         requestId: req.requestId,
-        provider: selectedApiKey.provider,
-        keyId: selectedApiKey.key.substring(0, 10) + '***',
+        keyId: selectedApiKey.substring(0, 10) + '***',
       });
 
-      // Step 7: Response
+      // Step 6: Response
       res.status(StatusCodes.OK).json({
         success: true,
-        message: 'Demo API key generated successfully',
-        apiKey: apiKeyWithMetadata,
-        warning: 'This is a demo API key with limited functionality and 24-hour expiration',
-        usage: {
-          instructions: 'Use this key in your API requests as: Authorization: Bearer <key>',
-          testEndpoint: 'POST /api/proxy/chat',
-          exampleRequest: {
-            headers: {
-              'Authorization': `Bearer ${selectedApiKey.key}`,
-              'Content-Type': 'application/json'
-            },
-            body: {
-              model: selectedApiKey.provider === 'openai' ? 'gpt-4' : 
-                     selectedApiKey.provider === 'anthropic' ? 'claude-3' :
-                     selectedApiKey.provider === 'google' ? 'gemini-pro' : 'default',
-              messages: [{ role: 'user', content: 'Hello, this is a test message!' }]
-            }
-          }
-        },
-        tips: [
-          'Demo keys have limited rate limits - use them for testing only',
-          'Keys expire after 24 hours for security',
-          'Monitor your usage in the dashboard',
-          'Contact support if you need production keys'
-        ]
+        apiKey: selectedApiKey
       });
 
     } catch (error) {

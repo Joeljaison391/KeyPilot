@@ -161,6 +161,7 @@ cors: {
         'http://localhost:8001',
         'http://localhost:5174',
         'http://localhost:5173',
+        'chrome-extension://amknoiejhlmhancpahfcfcfhllgkpbld',
         'https://keypilot-theta.vercel.app',
         'https://key-pilot-frontend.vercel.app'
       ];
