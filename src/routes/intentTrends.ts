@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { query } from 'express-validator';
+import { query, body } from 'express-validator';
 import { StatusCodes } from 'http-status-codes';
 import { validateRequest } from '../middleware/validation';
 import { TokenValidator } from '../utils/tokenValidator';
@@ -526,5 +526,290 @@ async function storeAnalysisResults(userId: string, analysis: TrendAnalysis, sta
     throw error;
   }
 }
+
+/**
+ * Intent Test Endpoint - Semantic matching for best API key selection
+ */
+router.post('/test',
+  validateRequest([
+    body('token')
+      .notEmpty()
+      .withMessage('Token is required')
+      .isLength({ min: 8, max: 100 })
+      .withMessage('Token must be between 8 and 100 characters'),
+    body('userID')
+      .notEmpty()
+      .withMessage('userID is required')
+      .isLength({ min: 1, max: 50 })
+      .withMessage('userID must be between 1 and 50 characters')
+      .matches(/^[a-zA-Z0-9_-]+$/)
+      .withMessage('userID can only contain letters, numbers, underscores, and hyphens'),
+    body('intent')
+      .notEmpty()
+      .withMessage('intent is required')
+      .isLength({ min: 3, max: 500 })
+      .withMessage('intent must be between 3 and 500 characters'),
+  ]),
+  async (req: Request, res: Response) => {
+    const startTime = Date.now();
+    let userId: string = '';
+
+    try {
+      const { token, userID, intent } = req.body;
+
+      logger.info('Intent test request received', {
+        requestId: req.requestId,
+        userID,
+        intentPreview: intent.substring(0, 50) + (intent.length > 50 ? '...' : ''),
+        ip: req.ip
+      });
+
+      // Step 1: Token validation
+      const tokenValidation = await TokenValidator.validateToken(token);
+      if (!tokenValidation.isValid) {
+        res.status(StatusCodes.UNAUTHORIZED).json({
+          success: false,
+          error: 'Invalid or expired token',
+          message: tokenValidation.error
+        });
+        return;
+      }
+
+      // Check if token's userId matches the provided userID
+      if (tokenValidation.userId !== userID) {
+        logger.warn('Token mismatch in intent test', {
+          requestId: req.requestId,
+          tokenUserId: tokenValidation.userId,
+          providedUserID: userID
+        });
+        res.status(StatusCodes.UNAUTHORIZED).json({
+          success: false,
+          error: 'Token mismatch',
+          message: 'Token does not match the provided userID'
+        });
+        return;
+      }
+
+      userId = tokenValidation.userId!;
+
+      // Step 2: Fetch session context
+      let sessionDurationMinutes = 45; // default
+      try {
+        const sessionTTL = await redisService.ttl(`user:${userId}`);
+        if (sessionTTL > 0) {
+          sessionDurationMinutes = Math.ceil(sessionTTL / 60);
+        }
+      } catch (sessionError) {
+        logger.warn('Failed to get session TTL:', sessionError);
+      }
+
+      // Step 3: Load user API keys
+      const userApiKeys = await redisService.getUserApiKeys(userId);
+
+      if (userApiKeys.length === 0) {
+        res.status(StatusCodes.OK).json({
+          success: true,
+          inference_ms: Date.now() - startTime,
+          selected: null,
+          message: 'No API keys on file for this user',
+          guidance: 'Please add API keys first using the /auth/add-key endpoint',
+          user_profile: {
+            userId,
+            session_info: {
+              status: 'active',
+              token,
+              session_duration_minutes: sessionDurationMinutes,
+              is_active: true
+            },
+            api_keys: {
+              total_keys: 0,
+              keys: []
+            },
+            summary: {
+              total_api_keys: 0,
+              active_session: true,
+              total_daily_usage: 0,
+              total_tokens_used_today: 0,
+              most_used_scopes: []
+            }
+          }
+        });
+        return;
+      }
+
+      // Step 4: Prepare semantic corpus and embed intent
+      const intentVec = VectorService.generateEmbedding(intent);
+      const scoredKeys: Array<{
+        template: string;
+        similarity: number;
+        usage_stats: any;
+        security: any;
+        corpusPreview: string;
+        keyData: any;
+      }> = [];
+
+      // Step 5: Process each key for similarity scoring
+      for (const keyInfo of userApiKeys) {
+        const keyData = keyInfo.data;
+        
+        // Build semantic corpus
+        const corpus = [
+          keyData.description || '',
+          keyInfo.template || '',
+          (keyData.scopes || []).join(' '),
+          keyData.provider || '',
+          keyData.notes || ''
+        ].filter(Boolean).join(' ').trim();
+
+        // Generate or use existing embedding
+        let keyVec: number[];
+        if (keyData.embedding) {
+          keyVec = keyData.embedding;
+        } else {
+          keyVec = VectorService.generateEmbedding(corpus);
+        }
+
+        // Calculate similarity
+        const similarity = VectorService.cosineSimilarity(intentVec, keyVec);
+
+        scoredKeys.push({
+          template: keyInfo.template,
+          similarity,
+          usage_stats: {
+            daily_usage: keyData.daily_usage || 0,
+            weekly_usage: keyData.weekly_usage || 0,
+            daily_tokens_used: keyData.daily_tokens_used || 0
+          },
+          security: {
+            has_encrypted_key: !!keyData.encrypted_key,
+            has_expiry: !!keyData.expiry_date,
+            allowed_origins_count: (keyData.allowed_origins || []).length
+          },
+          corpusPreview: corpus.substring(0, 100) + (corpus.length > 100 ? '...' : ''),
+          keyData
+        });
+      }
+
+      // Step 6: Rank and select best key
+      scoredKeys.sort((a, b) => {
+        // Primary sort: similarity (descending)
+        if (Math.abs(a.similarity - b.similarity) > 0.02) {
+          return b.similarity - a.similarity;
+        }
+        // Tie-breaker: prefer lower daily usage
+        return a.usage_stats.daily_usage - b.usage_stats.daily_usage;
+      });
+
+      const bestKey = scoredKeys[0] || null;
+
+      // Step 7: Build summary metrics
+      const totalDailyUsage = scoredKeys.reduce((sum, key) => sum + key.usage_stats.daily_usage, 0);
+      const totalTokensUsedToday = scoredKeys.reduce((sum, key) => sum + key.usage_stats.daily_tokens_used, 0);
+      
+      // Calculate most used scopes
+      const scopeCount: Record<string, number> = {};
+      scoredKeys.forEach(key => {
+        (key.keyData.scopes || []).forEach((scope: string) => {
+          scopeCount[scope] = (scopeCount[scope] || 0) + 1;
+        });
+      });
+      const mostUsedScopes = Object.entries(scopeCount)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 5)
+        .map(([scope, count]) => ({ scope, count }));
+
+      // Step 8: Redis health snapshot
+      let redisHealth = {
+        connection_status: redisService.getConnectionStatus(),
+        total_database_keys: 0,
+        user_data_percentage: 0
+      };
+
+      try {
+        const allKeys = await redisService.getAllKeys();
+        redisHealth.total_database_keys = allKeys.length;
+        const userKeys = allKeys.filter(key => key.includes(userId));
+        redisHealth.user_data_percentage = allKeys.length > 0 ? 
+          Math.round((userKeys.length / allKeys.length) * 100) : 0;
+      } catch (redisError) {
+        logger.warn('Failed to get Redis health snapshot:', redisError);
+      }
+
+      // Step 9: Build response
+      const response = {
+        success: true,
+        inference_ms: Date.now() - startTime,
+        selected: bestKey ? {
+          template: bestKey.template,
+          similarity: Math.round(bestKey.similarity * 1000) / 1000,
+          reason: 'highest_cosine_similarity'
+        } : null,
+        user_profile: {
+          userId,
+          session_info: {
+            status: 'active',
+            token,
+            session_duration_minutes: sessionDurationMinutes,
+            is_active: true
+          },
+          api_keys: {
+            total_keys: userApiKeys.length,
+            keys: scoredKeys.map(key => ({
+              template: key.template,
+              description: key.keyData.description || '',
+              usage_stats: key.usage_stats,
+              security: key.security
+            }))
+          },
+          summary: {
+            total_api_keys: userApiKeys.length,
+            active_session: true,
+            total_daily_usage: totalDailyUsage,
+            total_tokens_used_today: totalTokensUsedToday,
+            most_used_scopes: mostUsedScopes
+          }
+        },
+        development_insights: {
+          redis_health: redisHealth,
+          scoring: {
+            intent: intent.substring(0, 100) + (intent.length > 100 ? '...' : ''),
+            top_similarity: bestKey?.similarity || 0,
+            top_template: bestKey?.template || null,
+            ranked: scoredKeys.slice(0, 5).map(key => ({
+              template: key.template,
+              similarity: Math.round(key.similarity * 1000) / 1000
+            }))
+          }
+        }
+      };
+
+      logger.info('Intent test completed', {
+        requestId: req.requestId,
+        userId,
+        selectedTemplate: bestKey?.template || 'none',
+        topSimilarity: bestKey?.similarity || 0,
+        totalKeys: userApiKeys.length,
+        processingTimeMs: Date.now() - startTime
+      });
+
+      res.status(StatusCodes.OK).json(response);
+
+    } catch (error) {
+      logger.error('Intent test error:', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        requestId: req.requestId,
+        userId
+      });
+
+      res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
+        success: false,
+        error: 'Internal server error',
+        message: 'An error occurred during intent testing',
+        requestId: req.requestId
+      });
+    }
+  }
+);
 
 export default router;
