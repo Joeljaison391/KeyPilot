@@ -726,6 +726,15 @@ export class RedisService {
     }
   }
 
+  async hdel(key: string, field: string): Promise<number> {
+    try {
+      return await this.client.hDel(key, field);
+    } catch (error) {
+      logger.error(`Error deleting hash field ${key}:${field}:`, error);
+      throw error;
+    }
+  }
+
   async expire(key: string, seconds: number): Promise<boolean> {
     try {
       return await this.client.expire(key, seconds);

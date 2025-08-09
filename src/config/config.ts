@@ -163,7 +163,8 @@ cors: {
         'http://localhost:5173',
         'chrome-extension://amknoiejhlmhancpahfcfcfhllgkpbld',
         'https://keypilot-theta.vercel.app',
-        'https://key-pilot-frontend.vercel.app'
+        'https://key-pilot-frontend.vercel.app',
+        'https://hoppscotch.io'
       ];
       
       // Allow requests with no origin (mobile apps, curl, etc.)

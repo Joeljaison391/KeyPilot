@@ -530,7 +530,7 @@ async function storeAnalysisResults(userId: string, analysis: TrendAnalysis, sta
 /**
  * Intent Test Endpoint - Semantic matching for best API key selection
  */
-router.post('/test',
+router.post('/intent/test',
   validateRequest([
     body('token')
       .notEmpty()
