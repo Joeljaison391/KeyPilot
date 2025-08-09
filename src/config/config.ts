@@ -205,7 +205,7 @@ cors: {
   },
 
   demoUsers: (() => {
-    const demoUsersStr = process.env.DEMO_USERS || 'demo1:pass1,demo2:pass2,demo3:pass3';
+    const demoUsersStr = process.env.DEMO_USERS || 'demo1:pass1,demo2:pass2,demo3:pass3,demo4:pass4,demo5:pass5,demo6:pass6,demo7:pass7,demo8:pass8,demo9:pass9,demo10:pass10';
     const users: Record<string, string> = {};
     demoUsersStr.split(',').forEach(userPass => {
       const [userId, password] = userPass.split(':');
