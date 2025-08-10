@@ -165,7 +165,8 @@ cors: {
         'chrome-extension://amknoiejhlmhancpahfcfcfhllgkpbld',
         'https://keypilot-theta.vercel.app',
         'https://key-pilot-frontend.vercel.app',
-        'https://hoppscotch.io'
+        'https://hoppscotch.io',
+        'https://smartkeypilot.vercel.app'
       ];
       
       // Allow requests with no origin (mobile apps, curl, etc.)
