@@ -72,27 +72,34 @@ router.post('/login',
         userAgent: req.get('User-Agent'),
       });
 
-      // Step 1: Validate Demo User & Password
-      if (!config.demoUsers[userId]) {
-        logger.warn(`Invalid user login attempt: ${userId}`, {
+      // Step 1: Validate Dynamic Demo User & Password Format
+      // Expected format: userId = demo<3-digit-number>, password = pass<same-3-digits>
+      const userIdMatch = userId.match(/^demo(\d{3})$/);
+      if (!userIdMatch) {
+        logger.warn(`Invalid user format login attempt: ${userId}`, {
           requestId: req.requestId,
+          expectedFormat: 'demo<3-digit-number>',
         });
         res.status(StatusCodes.FORBIDDEN).json({
           success: false,
           error: 'Invalid credentials',
-          message: 'User not found or invalid credentials',
+          message: 'User ID must be in format: demo<3-digit-number> (e.g., demo001, demo123)',
         });
         return;
       }
 
-      if (config.demoUsers[userId] !== password) {
-        logger.warn(`Invalid password login attempt for user: ${userId}`, {
+      const userNumber = userIdMatch[1];
+      const expectedPassword = `pass${userNumber}`;
+
+      if (password !== expectedPassword) {
+        logger.warn(`Invalid password format login attempt for user: ${userId}`, {
           requestId: req.requestId,
+          expectedFormat: `pass${userNumber}`,
         });
         res.status(StatusCodes.FORBIDDEN).json({
           success: false,
           error: 'Invalid credentials',
-          message: 'User not found or invalid credentials',
+          message: `Password must be: pass${userNumber}`,
         });
         return;
       }
@@ -274,65 +281,23 @@ router.get('/demo-users', (_req: Request, res: Response) => {
     return;
   }
 
-  (async () => {
-    // Get all demo user IDs
-    const demoUserIds = Object.keys(config.demoUsers);
-    // Check if all demo users are active in Redis
-    const activeStatuses = await Promise.all(
-      demoUserIds.map(async (userId) => {
-        const session = await redisService.getUserSession(userId);
-        return session && session.status === 'active';
-      })
-    );
-    const allActive = activeStatuses.length > 0 && activeStatuses.every(Boolean);
-
-    // If all are active, create 3 new demo users and add to config and Redis
-    if (allActive) {
-  const newUsers: Record<string, string> = {};
-      for (let i = 0; i < 3; i++) {
-        const newId = `demo${Date.now()}${Math.floor(Math.random()*10000)}`;
-        const newPass = Math.random().toString(36).slice(-8);
-        newUsers[newId] = newPass;
-        // Set a session for the new user (inactive by default, 1 day TTL)
-        await redisService.setUserSession(newId, { status: 'inactive', token: '', activated_at: Date.now() }, 24*60*60);
-      }
-      // Add new users to config.demoUsers (in-memory)
-      Object.assign(config.demoUsers, newUsers);
-    }
-
-    // Prepare the updated list
-    const users = Object.keys(config.demoUsers).map(userId => ({
-      userId,
-      // Don't expose passwords in response
-      passwordHint: `${config.demoUsers[userId]?.substring(0, 2)}***`,
-    }));
-
-    res.status(StatusCodes.OK).json({
-      success: true,
-      demoUsers: users,
-      totalUsers: users.length,
-      apiInfo: {
-        loginEndpoint: 'POST /auth/login',
-        demoApiKeyEndpoint: 'POST /auth/demo-api-key',
-        loginExample: {
-          method: 'POST',
-          url: '/auth/login',
-          body: {
-            userId: 'demo1',
-            password: 'pass1'
-          }
-        },
-        demoApiKeyExample: {
-          method: 'POST',
-          url: '/auth/demo-api-key',
-          body: {
-            userId: 'demo1',
-            token: '<token_from_login_response>'
-          }
-        }
-      }
-    });
-  })();
+  res.status(StatusCodes.OK).json({
+    success: true,
+    message: 'Dynamic demo user system active',
+    userFormat: 'demo<3-digit-number> (e.g., demo001, demo123, demo999)',
+    passwordFormat: 'pass<same-3-digits> (e.g., pass001, pass123, pass999)',
+    examples: [
+      { userId: 'demo001', password: 'pass001' },
+      { userId: 'demo123', password: 'pass123' },
+      { userId: 'demo999', password: 'pass999' }
+    ],
+    features: [
+      'Users are created dynamically upon first login',
+      '8-minute session expiry',
+      'Maximum 3 API keys per user',
+      'No pre-registration required'
+    ]
+  });
 });
 
 // Development route to display all Redis data
@@ -734,7 +699,25 @@ router.post('/add-key',
 
       const userId = tokenValidation.userId!;
 
-      // Step 2: Check if template already exists
+      // Step 2: Check API key limit (max 3 keys per user)
+      const userApiKeysForLimit = await redisService.getUserApiKeys(userId);
+      if (userApiKeysForLimit.length >= config.session.maxKeysPerUser) {
+        logger.warn(`API key limit exceeded for user ${userId}`, {
+          requestId: req.requestId,
+          currentKeyCount: userApiKeysForLimit.length,
+          maxAllowed: config.session.maxKeysPerUser,
+        });
+        res.status(StatusCodes.FORBIDDEN).json({
+          success: false,
+          error: 'API key limit exceeded',
+          message: `Maximum ${config.session.maxKeysPerUser} API keys allowed per user. Current: ${userApiKeysForLimit.length}`,
+          currentKeyCount: userApiKeysForLimit.length,
+          maxAllowed: config.session.maxKeysPerUser,
+        });
+        return;
+      }
+
+      // Step 3: Check if template already exists
       const existingKey = await redisService.getApiKey(userId, template);
       if (existingKey) {
         logger.warn(`Template already exists for user ${userId}: ${template}`, {
@@ -748,7 +731,7 @@ router.post('/add-key',
         return;
       }
 
-      // Step 3: Semantic Conflict Detection
+      // Step 4: Semantic Conflict Detection
       const userApiKeys = await redisService.getUserApiKeys(userId);
       const existingDescriptions = userApiKeys.map(k => ({
         template: k.template,
@@ -1445,39 +1428,16 @@ router.get('/demo-api-key',
       }
 
 
-      // Step 1: Check if user is a demo user (with auto-expansion logic)
-      const demoUserIds = Object.keys(config.demoUsers);
-      // Check if all demo users are active
-      const activeStatuses = await Promise.all(
-        demoUserIds.map(async (id) => {
-          const session = await redisService.getUserSession(id);
-          return session && session.status === 'active';
-        })
-      );
-      const allActive = activeStatuses.length > 0 && activeStatuses.every(Boolean);
-      if (allActive) {
-        // Generate 3 new demo users
-        const newUsers: Record<string, string> = {};
-        for (let i = 0; i < 3; i++) {
-          const newId = `demo${Date.now()}${Math.floor(Math.random()*10000)}`;
-          const newPass = Math.random().toString(36).slice(-8);
-          newUsers[newId] = newPass;
-          // Set a session for the new user (inactive by default)
-          await redisService.setUserSession(newId, { status: 'inactive', token: '', activated_at: Date.now() }, 24*60*60); // 1 day TTL
-        }
-        // Add new users to config.demoUsers (in-memory)
-        Object.assign(config.demoUsers, newUsers);
-        logger.info('Auto-created 3 new demo users:', { newUsers });
-      }
-
-      if (!config.demoUsers[userId]) {
+      // Step 1: Validate demo user format (demo<3-digits>)
+      const userIdMatch = userId.match(/^demo(\d{3})$/);
+      if (!userIdMatch) {
         logger.warn(`Non-demo user attempted to get demo API key: ${userId}`, {
           requestId: req.requestId,
         });
         res.status(StatusCodes.FORBIDDEN).json({
           success: false,
           error: 'Access denied',
-          message: 'Demo API keys are only available for demo users',
+          message: 'Demo API keys are only available for demo users (format: demo<3-digits>)',
         });
         return;
       }
@@ -1666,10 +1626,10 @@ router.get('/user-profile/:userId', async (req: Request, res: Response) => {
         }
       },
       user_activity: {
-        has_demo_access: config.demoUsers && userId in config.demoUsers,
-        is_demo_user: config.demoUsers && userId in config.demoUsers,
-        demo_password_hint: config.demoUsers && userId in config.demoUsers ? 
-          `${config.demoUsers[userId]?.substring(0, 2)}***` : null,
+        has_demo_access: /^demo\d{3}$/.test(userId),
+        is_demo_user: /^demo\d{3}$/.test(userId),
+        demo_password_hint: /^demo(\d{3})$/.test(userId) ? 
+          `pass${userId.match(/^demo(\d{3})$/)?.[1]}` : null,
       },
       summary: {
         total_api_keys: userApiKeys.length,

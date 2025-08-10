@@ -79,6 +79,7 @@ interface Config {
   session: {
     ttl: number;
     tokenLength: number;
+    maxKeysPerUser: number;
   };
   demoUsers: Record<string, string>;
 }
@@ -201,12 +202,13 @@ cors: {
   },
 
   session: {
-    ttl: parseInt(process.env.SESSION_TTL || '1800', 10), // 30 minutes
+    ttl: parseInt(process.env.SESSION_TTL || '480', 10), // 8 minutes
     tokenLength: parseInt(process.env.TOKEN_LENGTH || '16', 10),
+    maxKeysPerUser: parseInt(process.env.MAX_KEYS_PER_USER || '3', 10), // max 3 keys per user
   },
 
   demoUsers: (() => {
-    const demoUsersStr = process.env.DEMO_USERS || 'demo1:pass1,demo2:pass2,demo3:pass3,demo4:pass4,demo5:pass5,demo6:pass6,demo7:pass7,demo8:pass8,demo9:pass9,demo10:pass10';
+    const demoUsersStr = process.env.DEMO_USERS || 'demo001:pass001,demo002:pass002,demo003:pass003,demo004:pass004,demo005:pass005,demo006:pass006,demo007:pass007,demo008:pass008,demo009:pass009,demo010:pass010';
     const users: Record<string, string> = {};
     demoUsersStr.split(',').forEach(userPass => {
       const [userId, password] = userPass.split(':');

@@ -325,25 +325,39 @@ router.post('/proxy',
         payload,
         decryptedApiKey
       });
-      switch (matchedTemplate) {
-        case 'gemini-chat-completion':
-          console.log('[Proxy] Gemini API call payload:', payload);
-          apiResponse = await callGeminiAPI(payload, decryptedApiKey);
-          break;
-        case 'openai-gpt-chat':
-          apiResponse = await callOpenAIGPTAPI(payload, decryptedApiKey);
-          break;
-        case 'openai-dalle-image':
-          apiResponse = await callOpenAIDALLEAPI(payload, decryptedApiKey);
-          break;
-        case 'anthropic-claude-chat':
-          apiResponse = await callAnthropicClaudeAPI(payload, decryptedApiKey);
-          break;
-        default:
-          apiResponse = {
-            success: false,
-            error: `Unsupported template: ${matchedTemplate}. Please use one of: gemini-chat-completion, openai-gpt-chat, openai-dalle-image, anthropic-claude-chat`
-          };
+
+      // Determine API provider based on template name pattern
+      if (matchedTemplate.startsWith('gemini')) {
+        console.log('[Proxy] Gemini API call payload:', payload);
+        apiResponse = await callGeminiAPI(payload, decryptedApiKey);
+      } else if (matchedTemplate.startsWith('openai-gpt') || matchedTemplate.startsWith('openai-chat')) {
+        apiResponse = await callOpenAIGPTAPI(payload, decryptedApiKey);
+      } else if (matchedTemplate.startsWith('openai-dalle') || matchedTemplate.startsWith('openai-image')) {
+        apiResponse = await callOpenAIDALLEAPI(payload, decryptedApiKey);
+      } else if (matchedTemplate.startsWith('anthropic') || matchedTemplate.startsWith('claude')) {
+        apiResponse = await callAnthropicClaudeAPI(payload, decryptedApiKey);
+      } else {
+        // Handle exact matches for backward compatibility
+        switch (matchedTemplate) {
+          case 'gemini-chat-completion':
+            console.log('[Proxy] Gemini API call payload:', payload);
+            apiResponse = await callGeminiAPI(payload, decryptedApiKey);
+            break;
+          case 'openai-gpt-chat':
+            apiResponse = await callOpenAIGPTAPI(payload, decryptedApiKey);
+            break;
+          case 'openai-dalle-image':
+            apiResponse = await callOpenAIDALLEAPI(payload, decryptedApiKey);
+            break;
+          case 'anthropic-claude-chat':
+            apiResponse = await callAnthropicClaudeAPI(payload, decryptedApiKey);
+            break;
+          default:
+            apiResponse = {
+              success: false,
+              error: `Unsupported template: ${matchedTemplate}. Supported patterns: gemini-*, openai-gpt-*, openai-dalle-*, anthropic-*, claude-*`
+            };
+        }
       }
       console.log('[Proxy] Model API response:', apiResponse);
 

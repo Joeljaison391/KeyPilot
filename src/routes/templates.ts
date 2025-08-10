@@ -518,6 +518,22 @@ router.get('/templates', async (_req: Request, res: Response) => {
       totalTemplates: PREDEFINED_TEMPLATES.length,
       categories: [...new Set(PREDEFINED_TEMPLATES.map(t => t.category))],
       providers: [...new Set(PREDEFINED_TEMPLATES.map(t => t.provider))],
+      customNaming: {
+        description: "You can create custom template names using these patterns:",
+        patterns: {
+          "gemini-*": "Google Gemini API (e.g., gemini-creative, gemini-personal, gemini-work)",
+          "openai-gpt-*": "OpenAI GPT Chat API (e.g., openai-gpt-personal, openai-chat-work)",
+          "openai-dalle-*": "OpenAI DALL-E Image API (e.g., openai-dalle-creative, openai-image-art)",
+          "anthropic-*": "Anthropic Claude API (e.g., anthropic-work, claude-personal)",
+          "claude-*": "Anthropic Claude API (alternative pattern)"
+        },
+        examples: [
+          "gemini-creative-writing",
+          "openai-gpt-coding-assistant", 
+          "anthropic-research-helper",
+          "gemini-personal-chat"
+        ]
+      },
       templates: templateSummary
     });
 

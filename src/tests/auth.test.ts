@@ -21,8 +21,8 @@ describe('Authentication Routes', () => {
       const response = await request(app)
         .post('/auth/login')
         .send({
-          userId: 'demo1',
-          password: 'pass1'
+          userId: 'demo001',
+          password: 'pass001'
         });
 
       expect(response.status).toBe(200);
@@ -80,7 +80,7 @@ describe('Authentication Routes', () => {
       const response = await request(app)
         .post('/auth/login')
         .send({
-          userId: 'demo1',
+          userId: 'demo001',
           password: 'ab' // Too short
         });
 
@@ -101,8 +101,8 @@ describe('Authentication Routes', () => {
       const response = await request(app)
         .post('/auth/login')
         .send({
-          userId: 'demo1',
-          password: 'pass1'
+          userId: 'demo001',
+          password: 'pass001'
         });
 
       expect(response.status).toBe(500);
