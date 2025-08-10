@@ -228,7 +228,7 @@ router.post('/feedback',
 /**
  * Get feedback statistics for a user (development endpoint)
  */
-router.get('/feedback-stats',
+router.post('/feedback-stats',
   validateRequest([
     body('token')
       .notEmpty()
@@ -238,12 +238,12 @@ router.get('/feedback-stats',
   ]),
   async (req: Request, res: Response) => {
     try {
-      const { token } = req.query;
+      const { token } = req.body;
 
       if (!token || typeof token !== 'string') {
         res.status(StatusCodes.BAD_REQUEST).json({
           success: false,
-          error: 'Token is required in query parameters'
+          error: 'Token is required in request body'
         });
         return;
       }

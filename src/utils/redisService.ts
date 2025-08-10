@@ -150,73 +150,100 @@ export class RedisService {
     try {
       if (this.isConnected) {
         await this.client.disconnect();
-        logger.info('Disconnected from Redis');
+        this.isConnected = false;
+        logger.info('Redis client disconnected');
       }
     } catch (error) {
       logger.error('Error disconnecting from Redis:', error);
     }
   }
 
-  async get(key: string): Promise<string | null> {
+  /**
+   * Check if Redis client is connected
+   */
+  getConnectionStatus(): boolean {
+    return this.isConnected;
+  }
+
+  /**
+   * Ensure Redis connection is active, reconnect if needed
+   */
+  async ensureConnection(): Promise<void> {
+    if (!this.isConnected) {
+      await this.connect();
+    }
+  }
+
+  /**
+   * Helper method to execute Redis operations with automatic reconnection
+   */
+  private async executeWithRetry<T>(operation: () => Promise<T>, operationName: string): Promise<T> {
     try {
-      return await this.client.get(key);
+      await this.ensureConnection();
+      return await operation();
     } catch (error) {
-      logger.error(`Error getting key ${key}:`, error);
+      // Try to reconnect once if connection error
+      if (error instanceof Error && error.message.includes('closed')) {
+        try {
+          this.isConnected = false;
+          await this.ensureConnection();
+          return await operation();
+        } catch (retryError) {
+          logger.error(`Error in ${operationName} after retry:`, retryError);
+          throw retryError;
+        }
+      }
+      logger.error(`Error in ${operationName}:`, error);
       throw error;
     }
+  }
+
+  async get(key: string): Promise<string | null> {
+    return this.executeWithRetry(
+      () => this.client.get(key),
+      `getting key ${key}`
+    );
   }
 
   async set(key: string, value: string, ttlSeconds?: number): Promise<void> {
-    try {
-      if (ttlSeconds) {
-        await this.client.setEx(key, ttlSeconds, value);
-      } else {
-        await this.client.set(key, value);
-      }
-    } catch (error) {
-      logger.error(`Error setting key ${key}:`, error);
-      throw error;
-    }
+    await this.executeWithRetry(
+      async () => {
+        if (ttlSeconds) {
+          await this.client.setEx(key, ttlSeconds, value);
+        } else {
+          await this.client.set(key, value);
+        }
+      },
+      `setting key ${key}`
+    );
   }
 
   async del(key: string): Promise<number> {
-    try {
-      return await this.client.del(key);
-    } catch (error) {
-      logger.error(`Error deleting key ${key}:`, error);
-      throw error;
-    }
+    return this.executeWithRetry(
+      () => this.client.del(key),
+      `deleting key ${key}`
+    );
   }
 
   async exists(key: string): Promise<number> {
-    try {
-      return await this.client.exists(key);
-    } catch (error) {
-      logger.error(`Error checking existence of key ${key}:`, error);
-      throw error;
-    }
+    return this.executeWithRetry(
+      () => this.client.exists(key),
+      `checking existence of key ${key}`
+    );
   }
 
   async ttl(key: string): Promise<number> {
-    try {
-      return await this.client.ttl(key);
-    } catch (error) {
-      logger.error(`Error getting TTL for key ${key}:`, error);
-      throw error;
-    }
+    return this.executeWithRetry(
+      () => this.client.ttl(key),
+      `getting TTL for key ${key}`
+    );
   }
 
   async ping(): Promise<string> {
-    try {
-      return await this.client.ping();
-    } catch (error) {
-      logger.error('Error pinging Redis:', error);
-      throw error;
-    }
-  }
-
-  getConnectionStatus(): boolean {
-    return this.isConnected;
+    return this.executeWithRetry(
+      () => this.client.ping(),
+      'pinging Redis'
+    );
   }
 
   // Analytics Methods
@@ -736,88 +763,106 @@ export class RedisService {
   }
 
   async expire(key: string, seconds: number): Promise<boolean> {
-    try {
-      return await this.client.expire(key, seconds);
-    } catch (error) {
-      logger.error(`Error setting expiry for key ${key}:`, error);
-      throw error;
-    }
+    return this.executeWithRetry(
+      () => this.client.expire(key, seconds),
+      `setting expiry for key ${key}`
+    );
   }
 
   async rpush(key: string, ...values: string[]): Promise<number> {
-    try {
-      return await this.client.rPush(key, values);
-    } catch (error) {
-      logger.error(`Error pushing to list ${key}:`, error);
-      throw error;
-    }
+    return this.executeWithRetry(
+      () => this.client.rPush(key, values),
+      `pushing to list ${key}`
+    );
   }
 
   async lrange(key: string, start: number, stop: number): Promise<string[]> {
-    try {
-      return await this.client.lRange(key, start, stop);
-    } catch (error) {
-      logger.error(`Error getting list range ${key}:`, error);
-      throw error;
-    }
+    return this.executeWithRetry(
+      () => this.client.lRange(key, start, stop),
+      `getting list range ${key}`
+    );
   }
 
   async xadd(key: string, id: string, fields: Record<string, string>): Promise<string> {
-    try {
-      return await this.client.xAdd(key, id, fields);
-    } catch (error) {
-      logger.error(`Error adding to stream ${key}:`, error);
-      throw error;
-    }
+    return this.executeWithRetry(
+      () => this.client.xAdd(key, id, fields),
+      `adding to stream ${key}`
+    );
   }
 
   async publish(channel: string, message: string): Promise<number> {
-    try {
-      return await this.client.publish(channel, message);
-    } catch (error) {
-      logger.error(`Error publishing to channel ${channel}:`, error);
-      throw error;
-    }
+    return this.executeWithRetry(
+      () => this.client.publish(channel, message),
+      `publishing to channel ${channel}`
+    );
   }
 
   async lpop(key: string): Promise<string | null> {
-    try {
-      return await this.client.lPop(key);
-    } catch (error) {
-      logger.error(`Error popping from list ${key}:`, error);
-      throw error;
-    }
+    return this.executeWithRetry(
+      () => this.client.lPop(key),
+      `popping from list ${key}`
+    );
   }
 
   async lpush(key: string, ...values: string[]): Promise<number> {
-    try {
-      return await this.client.lPush(key, values);
-    } catch (error) {
-      logger.error(`Error left-pushing to list ${key}:`, error);
-      throw error;
-    }
+    return this.executeWithRetry(
+      () => this.client.lPush(key, values),
+      `left-pushing to list ${key}`
+    );
   }
 
   async ltrim(key: string, start: number, stop: number): Promise<string> {
-    try {
-      return await this.client.lTrim(key, start, stop);
-    } catch (error) {
-      logger.error(`Error trimming list ${key}:`, error);
-      throw error;
-    }
+    return this.executeWithRetry(
+      () => this.client.lTrim(key, start, stop),
+      `trimming list ${key}`
+    );
   }
 
   async xrange(key: string, start = '-', end = '+', count?: number): Promise<any[]> {
-    try {
-      const options: any = {};
-      if (count) {
-        options.COUNT = count;
-      }
-      return await this.client.xRange(key, start, end, options);
-    } catch (error) {
-      logger.error(`Error reading stream ${key}:`, error);
-      throw error;
-    }
+    return this.executeWithRetry(
+      () => {
+        const options: any = {};
+        if (count) {
+          options.COUNT = count;
+        }
+        return this.client.xRange(key, start, end, options);
+      },
+      `reading stream ${key}`
+    );
+  }
+
+  async xrevrange(key: string, start = '+', end = '-', count?: number): Promise<any[]> {
+    return this.executeWithRetry(
+      () => {
+        const options: any = {};
+        if (count) {
+          options.COUNT = count;
+        }
+        return this.client.xRevRange(key, start, end, options);
+      },
+      `reading stream in reverse ${key}`
+    );
+  }
+
+  async incr(key: string): Promise<number> {
+    return this.executeWithRetry(
+      () => this.client.incr(key),
+      `incrementing key ${key}`
+    );
+  }
+
+  async xtrim(key: string, strategy: 'MAXLEN' | 'MINID', threshold: number): Promise<number> {
+    return this.executeWithRetry(
+      () => this.client.xTrim(key, strategy, threshold),
+      `trimming stream ${key}`
+    );
+  }
+
+  async keys(pattern: string): Promise<string[]> {
+    return this.executeWithRetry(
+      () => this.client.keys(pattern),
+      `getting keys with pattern ${pattern}`
+    );
   }
 }
 

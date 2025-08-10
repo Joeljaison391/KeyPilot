@@ -9,6 +9,7 @@ import { TemplateMatchingService } from '../utils/templateMatching';
 import { AccessControlService } from '../utils/accessControl';
 import { EncryptionService } from '../utils/encryption';
 import { NotificationService } from '../utils/notificationService';
+import { AnalyticsService } from '../utils/analyticsService';
 import { redisService } from '../utils/redisService';
 import { logger } from '../utils/logger';
 
@@ -74,6 +75,12 @@ router.post('/proxy',
     try {
       const { token, intent: rawIntent, payload, origin } = req.body;
       intent = rawIntent;
+      console.log('[Proxy] Incoming request:', {
+        userId,
+        intent,
+        payload,
+        origin
+      });
 
       logger.info('Proxy request received', {
         requestId: req.requestId,
@@ -85,6 +92,18 @@ router.post('/proxy',
       // Step 1: Token Validation
       const tokenValidation = await TokenValidator.validateToken(token);
       if (!tokenValidation.isValid) {
+        // Record analytics for unauthorized request
+        await AnalyticsService.recordRequest({
+          userId: 'unknown',
+          intent,
+          cached: false,
+          latencyMs: Date.now() - startTime,
+          tokensUsed: 0,
+          success: false,
+          errorType: 'unauthorized',
+          timestamp: new Date()
+        });
+
         res.status(StatusCodes.UNAUTHORIZED).json({
           success: false,
           error: 'Invalid or expired token',
@@ -128,10 +147,12 @@ router.post('/proxy',
           confidence
         });
 
-        console.log('Cache hit - returning cached response', {
+        console.log('[Proxy] Cache hit. Returning cached response:', {
           userId,
-          template: matchedTemplate,
-          confidence
+          intent,
+          processedIntent,
+          matchedTemplate,
+          cachedResponse: cacheResult.entry.response
         });
 
         // Stream completion event
@@ -139,6 +160,19 @@ router.post('/proxy',
         await NotificationService.streamRequestCompleted(
           userId, intent, matchedTemplate, confidence, true, latency, 0
         );
+
+        // Record analytics for cached response
+        await AnalyticsService.recordRequest({
+          userId,
+          intent,
+          template: matchedTemplate,
+          confidence,
+          cached: true,
+          latencyMs: latency,
+          tokensUsed: 0,
+          success: true,
+          timestamp: new Date()
+        });
 
         res.status(StatusCodes.OK).json({
           response: cacheResult.entry.response,
@@ -154,6 +188,18 @@ router.post('/proxy',
       const templateMatch = await TemplateMatchingService.findMatchingTemplate(userId, processedIntent);
       
       if (!templateMatch.found || !templateMatch.match) {
+        // Record analytics for not found error
+        await AnalyticsService.recordRequest({
+          userId,
+          intent,
+          cached: false,
+          latencyMs: Date.now() - startTime,
+          tokensUsed: 0,
+          success: false,
+          errorType: 'not_found',
+          timestamp: new Date()
+        });
+
         res.status(StatusCodes.NOT_FOUND).json({
           success: false,
           error: 'No matching API template found for this intent',
@@ -184,6 +230,20 @@ router.post('/proxy',
           ? StatusCodes.TOO_MANY_REQUESTS 
           : StatusCodes.FORBIDDEN;
 
+        // Record analytics for access denied
+        await AnalyticsService.recordRequest({
+          userId,
+          intent,
+          template: matchedTemplate,
+          confidence,
+          cached: false,
+          latencyMs: Date.now() - startTime,
+          tokensUsed: 0,
+          success: false,
+          errorType: 'failed',
+          timestamp: new Date()
+        });
+
         res.status(statusCode).json({
           success: false,
           error: accessValidation.error,
@@ -195,6 +255,20 @@ router.post('/proxy',
       // Step 7: Decrypt API Key
       const apiKeyData = await redisService.getApiKey(userId, matchedTemplate);
       if (!apiKeyData) {
+        // Record analytics for missing API key
+        await AnalyticsService.recordRequest({
+          userId,
+          intent,
+          template: matchedTemplate,
+          confidence,
+          cached: false,
+          latencyMs: Date.now() - startTime,
+          tokensUsed: 0,
+          success: false,
+          errorType: 'failed',
+          timestamp: new Date()
+        });
+
         res.status(StatusCodes.NOT_FOUND).json({
           success: false,
           error: 'API key data not found'
@@ -229,32 +303,48 @@ router.post('/proxy',
         tokensUsed?: number;
       };
 
+      console.log('[Proxy] Calling model API:', {
+        matchedTemplate,
+        payload,
+        decryptedApiKey
+      });
       switch (matchedTemplate) {
         case 'gemini-chat-completion':
-            console.log("decryptedApiKey", decryptedApiKey);
+          console.log('[Proxy] Gemini API call payload:', payload);
           apiResponse = await callGeminiAPI(payload, decryptedApiKey);
           break;
-        
         case 'openai-gpt-chat':
           apiResponse = await callOpenAIGPTAPI(payload, decryptedApiKey);
           break;
-        
         case 'openai-dalle-image':
           apiResponse = await callOpenAIDALLEAPI(payload, decryptedApiKey);
           break;
-        
         case 'anthropic-claude-chat':
           apiResponse = await callAnthropicClaudeAPI(payload, decryptedApiKey);
           break;
-        
         default:
           apiResponse = {
             success: false,
             error: `Unsupported template: ${matchedTemplate}. Please use one of: gemini-chat-completion, openai-gpt-chat, openai-dalle-image, anthropic-claude-chat`
           };
       }
+      console.log('[Proxy] Model API response:', apiResponse);
 
       if (!apiResponse.success) {
+        // Record analytics for API failure
+        await AnalyticsService.recordRequest({
+          userId,
+          intent,
+          template: matchedTemplate,
+          confidence,
+          cached: false,
+          latencyMs: Date.now() - startTime,
+          tokensUsed: 0,
+          success: false,
+          errorType: 'failed',
+          timestamp: new Date()
+        });
+
         res.status(StatusCodes.BAD_GATEWAY).json({
           success: false,
           error: `${matchedTemplate} API call failed`,
@@ -279,6 +369,19 @@ router.post('/proxy',
         userId, intent, matchedTemplate, confidence, cached, latency, tokensUsed
       );
 
+      // Record analytics for successful response
+      await AnalyticsService.recordRequest({
+        userId,
+        intent,
+        template: matchedTemplate,
+        confidence,
+        cached: false,
+        latencyMs: latency,
+        tokensUsed,
+        success: true,
+        timestamp: new Date()
+      });
+
       // Step 12: Return Response to Client
       const notices: string[] = [];
       
@@ -302,6 +405,22 @@ router.post('/proxy',
 
     } catch (error) {
       logger.error('Proxy request error:', error);
+      
+      // Record analytics for general error
+      if (userId) {
+        await AnalyticsService.recordRequest({
+          userId,
+          intent,
+          template: matchedTemplate,
+          confidence,
+          cached,
+          latencyMs: Date.now() - startTime,
+          tokensUsed,
+          success: false,
+          errorType: 'failed',
+          timestamp: new Date()
+        });
+      }
       
       // Stream error event if we have userId
       if (userId) {
