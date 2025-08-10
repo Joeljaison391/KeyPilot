@@ -20,7 +20,7 @@ interface CacheSearchResult {
 
 export class SemanticCache {
   private static readonly CACHE_PREFIX = 'cache_embeddings';
-  private static readonly SIMILARITY_THRESHOLD = 0.85; // Lowered for better matching
+  private static readonly SIMILARITY_THRESHOLD = 0.95; // Raised for more precise matching
   private static readonly CACHE_TTL = 21600; // 6 hours
   private static readonly MAX_CACHE_ENTRIES = 3; // Limit to latest 3 entries per user
 
@@ -31,9 +31,12 @@ export class SemanticCache {
     try {
       const cacheKey = `${this.CACHE_PREFIX}:${userId}`;
       
-      // Generate embedding for current request
-      const requestText = `${intent} ${JSON.stringify(payload)}`;
+      // Generate embedding for current request - focus on the actual prompt
+      const currentPrompt = payload.prompt || payload.message || payload.text || '';
+      const requestText = `${intent} ${currentPrompt}`;
       const currentEmbedding = VectorService.generateEmbedding(requestText);
+      
+      console.log('[SemanticCache] Current request text:', requestText);
       
       // Get all cached entries for user
       const cachedEntries = await redisService.hgetall(cacheKey);
@@ -52,12 +55,21 @@ export class SemanticCache {
         try {
           const entryData: CacheEntry = JSON.parse(entryDataStr as string);
           
-          // Generate embedding for cached entry using the actual payload
-          const cachedText = `${entryData.intent} ${JSON.stringify(entryData.payload || entryData.payload_hash)}`;
+          // Generate embedding for cached entry - focus on the actual prompt
+          const cachedPrompt = entryData.payload?.prompt || entryData.payload?.message || entryData.payload?.text || '';
+          const cachedText = `${entryData.intent} ${cachedPrompt}`;
           const cachedEmbedding = VectorService.generateEmbedding(cachedText);
           
-          // Calculate similarity
-          const similarity = VectorService.cosineSimilarity(currentEmbedding, cachedEmbedding);
+          console.log('[SemanticCache] Cached entry text:', cachedText);
+          
+          // Also do a simple string similarity check for prompts
+          const promptSimilarity = this.calculateStringSimilarity(currentPrompt, cachedPrompt);
+          
+          // Calculate cosine similarity
+          const cosineSimilarity = VectorService.cosineSimilarity(currentEmbedding, cachedEmbedding);
+          
+          // Use the lower of the two similarities to be more conservative
+          const similarity = Math.min(cosineSimilarity, promptSimilarity);
           
           logger.info(`Cache entry ${entryId} similarity: ${similarity.toFixed(3)}`, {
             cached_intent: entryData.intent.substring(0, 50),
@@ -242,5 +254,25 @@ export class SemanticCache {
       logger.error('Failed to check cache availability:', error);
       return false;
     }
+  }
+
+  /**
+   * Calculate string similarity using simple overlap
+   */
+  private static calculateStringSimilarity(str1: string, str2: string): number {
+    if (str1 === str2) return 1.0;
+    if (str1.length === 0 && str2.length === 0) return 1.0;
+    if (str1.length === 0 || str2.length === 0) return 0.0;
+
+    const words1 = str1.toLowerCase().split(/\s+/);
+    const words2 = str2.toLowerCase().split(/\s+/);
+    
+    const set1 = new Set(words1);
+    const set2 = new Set(words2);
+    
+    const intersection = new Set([...set1].filter(x => set2.has(x)));
+    const union = new Set([...set1, ...set2]);
+    
+    return intersection.size / union.size;
   }
 }

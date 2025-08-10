@@ -147,15 +147,13 @@ router.post('/proxy',
           confidence
         });
 
-        console.log('[Proxy] Cache hit. Returning cached response:', {
-          userId,
-          intent,
-          processedIntent,
-          matchedTemplate,
-          cachedResponse: cacheResult.entry.response
-        });
-
-        // Stream completion event
+      console.log('[Proxy] Cache hit. Returning cached response:', {
+        userId,
+        intent,
+        processedIntent,
+        matchedTemplate,
+        cachedResponse: JSON.stringify(cacheResult.entry.response, null, 2)
+      });        // Stream completion event
         const latency = Date.now() - startTime;
         await NotificationService.streamRequestCompleted(
           userId, intent, matchedTemplate, confidence, true, latency, 0
@@ -188,31 +186,50 @@ router.post('/proxy',
       const templateMatch = await TemplateMatchingService.findMatchingTemplate(userId, processedIntent);
       
       if (!templateMatch.found || !templateMatch.match) {
-        // Record analytics for not found error
-        await AnalyticsService.recordRequest({
+        // Fallback: Use default template based on payload structure
+        console.log('[Proxy] No template found, using fallback logic:', {
           userId,
           intent,
-          cached: false,
-          latencyMs: Date.now() - startTime,
-          tokensUsed: 0,
-          success: false,
-          errorType: 'not_found',
-          timestamp: new Date()
+          processedIntent,
+          payload
         });
 
-        res.status(StatusCodes.NOT_FOUND).json({
-          success: false,
-          error: 'No matching API template found for this intent',
-          suggestions: await TemplateMatchingService.getTemplateSuggestions(userId, processedIntent, 3)
-        });
-        return;
+        // Determine template based on payload structure
+        if (payload.prompt || payload.messages) {
+          matchedTemplate = 'gemini-chat-completion'; // Default to Gemini for text generation
+          confidence = 0.5; // Low confidence since it's a fallback
+          console.log('[Proxy] Using fallback template: gemini-chat-completion');
+        } else if (payload.image || payload.prompt?.includes('image')) {
+          matchedTemplate = 'openai-dalle-image';
+          confidence = 0.5;
+          console.log('[Proxy] Using fallback template: openai-dalle-image');
+        } else {
+          // Record analytics for not found error
+          await AnalyticsService.recordRequest({
+            userId,
+            intent,
+            cached: false,
+            latencyMs: Date.now() - startTime,
+            tokensUsed: 0,
+            success: false,
+            errorType: 'not_found',
+            timestamp: new Date()
+          });
+
+          res.status(StatusCodes.NOT_FOUND).json({
+            success: false,
+            error: 'No matching API template found for this intent and unable to determine fallback',
+            suggestions: await TemplateMatchingService.getTemplateSuggestions(userId, processedIntent, 3)
+          });
+          return;
+        }
+      } else {
+        matchedTemplate = templateMatch.match.template;
+        confidence = templateMatch.match.confidence;
       }
 
-      matchedTemplate = templateMatch.match.template;
-      confidence = templateMatch.match.confidence;
-
-      // Handle template conflicts
-      if (templateMatch.hasConflict && templateMatch.conflictingTemplates) {
+      // Handle template conflicts (only if template was found, not fallback)
+      if (templateMatch && templateMatch.hasConflict && templateMatch.conflictingTemplates) {
         await NotificationService.notifyTemplateConflict(
           userId, 
           processedIntent, 
@@ -516,6 +533,13 @@ async function callGeminiAPI(payload: any, apiKey: string): Promise<{
         }]
       }]
     };
+
+    // Log the exact prompt being sent
+    console.log('[Gemini API] Prompt being sent:', {
+      originalPayload: payload,
+      extractedPrompt: payload.prompt || payload.message || payload.text || "Hello",
+      requestBodyContents: requestBody.contents
+    });
 
     // Add generation config only if specified (Gemini has defaults)
     const generationConfig: any = {};
