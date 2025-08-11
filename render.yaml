@@ -52,6 +52,12 @@ services:
       #   sync: false
       # - key: ANTHROPIC_API_KEY
       #   sync: false
+      # Demo API keys list used by /auth/demo-api-key endpoint
+      # Provide as JSON array or CSV. Prefer JSON for keys with commas.
+      # Example JSON: ["key1","key2"]
+      # Example CSV: key1,key2
+      - key: DEMO_API_KEYS
+        sync: false
     
     # Scaling configuration
     numInstances: 1 # Start with 1, scale up as needed

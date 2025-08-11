@@ -1469,13 +1469,27 @@ router.get('/demo-api-key',
         return;
       }
 
-      // Step 4: Sample API keys for different providers
-      const sampleApiKeys = [
+      // Step 4: Load sample API keys from configuration (env-driven) with hardcoded fallback
+      const defaultSampleApiKeys = [
         'AIzaSyAwnlH-Qt-QZoIErK9djXXvET1O9G7BlJ8',
         'AIzaSyAAuFlOYJMFe-BAY8orqv2EqggcJjQ6y1U',
         'AIzaSyBrFOrwyudxmQApaaIeVnGqkVCWzbDlFIc',
         'AIzaSyCXj4WWlPApv60KnN7Lhsfe6UMT0x4EHJM',
       ];
+      const sampleApiKeys = (Array.isArray(config.demo.sampleApiKeys) && config.demo.sampleApiKeys.length > 0)
+        ? config.demo.sampleApiKeys
+        : defaultSampleApiKeys;
+
+      // Ensure there are keys configured
+      if (!Array.isArray(sampleApiKeys) || sampleApiKeys.length === 0) {
+        logger.warn('No demo API keys configured via DEMO_API_KEYS', { requestId: req.requestId });
+        res.status(StatusCodes.SERVICE_UNAVAILABLE).json({
+          success: false,
+          error: 'No API keys configured',
+          message: 'Set DEMO_API_KEYS env var with a CSV or JSON array of keys',
+        });
+        return;
+      }
 
       // Step 5: Select a random API key
       const randomIndex = Math.floor(Math.random() * sampleApiKeys.length);

@@ -10,6 +10,9 @@ interface Config {
     name: string;
     version: string;
   };
+  demo: {
+    sampleApiKeys: string[];
+  };
   quota: {
     daily: number;
     monthly: number;
@@ -91,6 +94,25 @@ const config: Config = {
   app: {
     name: process.env.APP_NAME || 'gateway-service',
     version: process.env.APP_VERSION || '1.0.0',
+  },
+
+  demo: {
+    sampleApiKeys: (() => {
+      const raw = process.env.DEMO_API_KEYS || process.env.DEMO_SAMPLE_API_KEYS || '';
+      if (!raw) return [];
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return parsed.map((k) => String(k).trim()).filter(Boolean);
+        }
+      } catch (_) {
+        // not JSON, fall through to CSV parsing
+      }
+      return raw
+        .split(/[\n,;]+/)
+        .map((k) => k.trim())
+        .filter((k) => k.length > 0);
+    })(),
   },
 
   quota: {
