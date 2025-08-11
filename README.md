@@ -1,181 +1,56 @@
-# KeyPilot
+# KeyPilot – Semantic API Gateway with Real‑Time AI Routing & Caching
 
-🚀 **Production-grade AI API Gateway Service** powered by Redis for intelligent request routing, semantic caching, and advanced analytics.
+One request, one intent—and KeyPilot routes to the right provider automatically. No key juggling. No endpoint guessing. Faster builds, lower cost.
 
-## 🎯 Overview
+Live demo: `https://smartkeypilot.vercel.app/`  
+Post: KeyPilot on DEV [`https://dev.to/joeljaison394/keypilot-semantic-api-gateway-with-real-time-ai-routing-caching-2b94`]
 
-KeyPilot is a sophisticated Express.js gateway service that provides intelligent API request routing with semantic analysis, Redis-powered caching, and comprehensive analytics. Built for production environments with enterprise-grade security, monitoring, and scalability.
+### Idea in 30 seconds
+- **Describe what you want** (intent + payload). KeyPilot selects the best template (Gemini/OpenAI/Anthropic), applies limits, and proxies the call.
+- **Semantic cache** detects near‑duplicate requests and returns results instantly.
+- **Ephemeral sessions** make the demo safe: keys expire automatically.
 
-## ✨ Key Features
-
-### � **Authentication & Security**
-- JWT-based token authentication
-- API key management with encryption
-- Rate limiting and request validation
-- Helmet.js security headers
-- CORS configuration
-
-### 🧠 **Intelligent Routing**
-- Semantic intent analysis and matching
-- Template-based API routing
-- Confidence scoring for optimal selection
-- Vector embedding similarity matching
-
-### ⚡ **Redis-Powered Performance**
-- Semantic caching with TTL management
-- Real-time analytics and insights
-- Redis Streams for event logging
-- Intent trend analysis and clustering
-
-### 📊 **Advanced Analytics**
-- Cache inspector with clustering analysis
-- Intent trend detection and forecasting
-- Performance metrics and optimization
-- Feedback loop for continuous improvement
-
-### 🔧 **Developer Experience**
-- Comprehensive testing framework (100+ tests)
-- TypeScript with strict type checking
-- Docker containerization
-- Hot reload development environment
-- Extensive documentation and examples
-
-## 🏗️ Architecture
-
+Demo login pattern (for the live app):
 ```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Client Apps   │────│   KeyPilot API   │────│   External APIs │
-│                 │    │    Gateway       │    │  (OpenAI, etc.) │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-                              │
-                       ┌──────────────┐
-                       │    Redis     │
-                       │   • Cache    │
-                       │   • Sessions │
-                       │   • Analytics│
-                       │   • Streams  │
-                       └──────────────┘
+Username: demo + 3 digits  (e.g., demo123)
+Password: pass + same 3 digits  (e.g., pass123)
 ```
 
-## 🚀 Quick Start
+## How we use Redis (beyond cache)
+- **Semantic cache (Strings + TTL):** store responses under user + payload hash, with a conservative similarity threshold for cache hits.
+- **Sessions & API keys (Strings + TTL):** `user:<id>` holds session with TTL; API keys `user:<id>:keys:<template>` inherit the same TTL. Keys are encrypted with the user’s session token.
+- **Streams & Pub/Sub:** live request received/completed events, plus timelines for debug/feedback.
+- **Counters & Trends:** track usage, cluster intents over time for insight into what users request next.
 
-### Prerequisites
-- Node.js 18+ 
-- Redis 4.6+
-- TypeScript
-- npm or yarn
+## Run locally (backend only or full‑stack)
+Prereqs: Node 18+, Redis 7+, npm
 
-### Installation
+1) Backend (this repo)
+- Install: `npm install`
+- Env: `cp .env.example .env` and set `REDIS_URL` (local or Redis Cloud)
+- Start Redis: `docker run -d -p 6379:6379 redis:7-alpine` or `docker-compose up -d redis`
+- Run: `npm run dev` → API at `http://localhost:3000`
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/Joeljaison391/KeyPilot.git
-   cd KeyPilot
-   ```
+2) Full‑stack (with frontend)
+- Frontend repo: `https://github.com/Joeljaison391/KeyPilot-Frontend`
+- Start backend as above (or change ports as you like)
+- In the frontend: set `VITE_API_BASE_URL=http://localhost:3000`, then `npm install && npm run dev` → `http://localhost:5173`
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
+## Project structure (backend)
+- `src/app.ts` express app wiring: security, logging, routes, rate‑limit
+- `src/routes/` auth, keys, proxy, templates, feedback, cache inspector, intent trends, health
+- `src/utils/` redis client, semantic cache, vector scoring, access control, encryption, notifications
+- `src/config/` environment configuration
 
-3. **Configure environment**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
+## Redis AI Challenge
+Built for the Redis AI Challenge 2025 to showcase a semantic API gateway powered end‑to‑end by Redis: vector‑style matching, fast cache, ephemeral sessions, and real‑time analytics—all without extra brokers or databases. See the write‑up: KeyPilot on DEV [`https://dev.to/joeljaison394/keypilot-semantic-api-gateway-with-real-time-ai-routing-caching-2b94`]
 
-4. **Start Redis**
-   ```bash
-   # Using Docker
-   docker run -d -p 6379:6379 redis:alpine
-   
-   # Or using docker-compose
-   docker-compose up redis -d
-   ```
+## Quick API notes
+- Auth: `/auth/login`, `/auth/logout`, `/auth/status/:userId`, `/auth/add-key`, `/auth/update-key`, `/auth/delete-key`, `/auth/demo-api-key`
+- Proxy: `/api/proxy` (real call), `/api/proxy/test` (semantic test, no external call)
+- Analytics: `/api/cache-inspector`, `/api/intent-trends`, `/api/feedback`, `/api/feedback-stats`
+- Health: `/health`, `/health/ready`, `/health/live`
 
-5. **Run the service**
-   ```bash
-   # Development mode
-   npm run dev
-   
-   # Production build
-   npm run build
-   npm start
-   ```
+Security note: demo sessions are short‑lived; do not use personal/production keys.
 
-## 📋 API Endpoints
-
-### 🔐 Authentication
-```http
-POST /auth/login              # User authentication
-GET  /auth/validate           # Token validation
-POST /auth/add-key            # Add API key
-PUT  /auth/add-key            # Update API key
-DELETE /auth/logout           # User logout
-```
-
-### 🚀 Proxy & Routing
-```http
-POST /api/proxy               # Intelligent API proxy
-POST /api/proxy/test          # Semantic testing playground
-```
-
-### 📊 Analytics
-```http
-GET  /api/cache-inspector     # Cache analysis and clustering
-GET  /api/intent-trends       # Intent trend analysis
-GET  /api/feedback-stats      # Feedback statistics
-```
-
-### 💬 Feedback
-```http
-POST /api/feedback            # Submit feedback
-```
-
-### 🩺 Health & Monitoring
-```http
-GET  /health                  # Service health
-GET  /health/ready            # Readiness check
-GET  /health/live             # Liveness check
-```
-
-## 🧪 Testing
-
-KeyPilot includes a comprehensive testing framework with 100+ test cases:
-
-```bash
-# Run all tests
-npm test
-
-# Unit tests only
-npm run test:unit
-
-# Integration tests
-npm run test:integration
-
-# Watch mode
-npm run test:watch
-
-# Coverage report
-npm run test:coverage
-```
-
-## 🐳 Docker Deployment
-
-### Development
-```bash
-docker-compose up
-```
-
-### Production
-```bash
-# Build image
-docker build -t keypilot:latest .
-
-# Run container
-docker run -d \
-  --name keypilot \
-  -p 3000:3000 \
-  -e REDIS_URL=redis://redis:6379 \
-  keypilot:latest
-```
+Frontend: KeyPilot Frontend [`https://github.com/Joeljaison391/KeyPilot-Frontend`]
