@@ -1471,12 +1471,10 @@ router.get('/demo-api-key',
 
       // Step 4: Sample API keys for different providers
       const sampleApiKeys = [
-        'sk-demo1234567890abcdef1234567890abcdef1234567890abcdef',
-        'sk-ant-demo9876543210fedcba9876543210fedcba9876543210fedcba',
-        'AIzaSyDemo_1234567890abcdefghijklmnopqrstuvwxyz',
-        'sk-img-demo1234567890abcdef1234567890abcdef1234567890',
-        'sk-stab-demo9876543210fedcba9876543210fedcba9876543210',
-        'hf_demo1234567890abcdefghijklmnopqrstuvwxyz1234567890'
+        'AIzaSyAwnlH-Qt-QZoIErK9djXXvET1O9G7BlJ8',
+        'AIzaSyAAuFlOYJMFe-BAY8orqv2EqggcJjQ6y1U',
+        'AIzaSyBrFOrwyudxmQApaaIeVnGqkVCWzbDlFIc',
+        'AIzaSyCXj4WWlPApv60KnN7Lhsfe6UMT0x4EHJM',
       ];
 
       // Step 5: Select a random API key
